@@ -1,8 +1,5 @@
 import logging
 
-import eventlet
-eventlet.monkey_patch()
-
 import flask
 import flask_socketio
 from utils.ws_logger import WebSocketLogger
@@ -13,10 +10,6 @@ import markupsafe
 import utils.log
 import json
 import traceback
-
-# Monkeypatches the standard library to replace its key elements with green equivalents (greenlets)
-# This is needed for websocket to work and avoid falling back to long polling
-eventlet.monkey_patch()
 
 app = flask.Flask(__name__, template_folder='web/templates', static_folder='web/static')
 socketio = flask_socketio.SocketIO(app)
