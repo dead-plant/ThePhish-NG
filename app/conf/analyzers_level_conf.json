@@ -1,5 +1,5 @@
 {
-	"DomainMailSPFDMARC_Analyzer_1_1" : {
+	"DomainMailSPFDMARC_Analyzer_1_2" : {
 		"dataType" : ["url", "ip", "domain", "mail"],
 		"levelMapping" : {
 			"malicious" : "suspicious",
