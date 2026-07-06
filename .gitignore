@@ -1,5 +1,5 @@
 nogit.*
-
+.venv/
 
 HELP.md
 target/
