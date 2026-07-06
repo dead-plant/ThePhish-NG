@@ -24,9 +24,6 @@ assignees: ''
 | TheHive version  |           |
 | Cortex version  |           |
 | MISP version  |           |
-| Installed using Docker and Docker Compose | True / False |
-| Docker Version | If applicable |
-| Docker Compose version | If applicable |
 
 **Question**
 
