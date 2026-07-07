@@ -43,11 +43,11 @@ The upstream repository also provides installation and configuration guides, whi
 Quick note: this is only a short overview. For a detailed walkthrough, see the upstream [usage example](https://github.com/emalderson/ThePhish/blob/master/README.md#thephish-example-usage).
 
 1. Forward the suspicious message as a `.eml` attachment (not inline) to the mailbox monitored by ThePhish2.
-<img src="pictures/demo/0_do_forward.png" width="400">
+<img src="docs/pictures/demo/0_do_forward.png" width="400">
 2. In your browser, open ThePhish2 and click `List emails` to fetch messages from the mail server via IMAP.
-<img src="pictures/demo/2_gui_list.png" width="700">
+<img src="docs/pictures/demo/2_gui_list.png" width="700">
 3. Select an email and click `Analyze` to create a TheHive case and run Cortex analyzers.
-<img src="pictures/demo/3_start_analysis_gui.png" width="700">
+<img src="docs/pictures/demo/3_start_analysis_gui.png" width="700">
 4. Review the verdict in the UI. If configured correctly, export malicious cases to MISP.
 
 ## What changed
