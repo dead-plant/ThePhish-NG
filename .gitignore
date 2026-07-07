@@ -1,5 +1,7 @@
 nogit.*
 .venv/
+config/
+__pycache__/
 
 HELP.md
 target/
