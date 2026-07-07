@@ -1,5 +1,8 @@
 import logging
 
+from gevent import monkey
+monkey.patch_all()
+
 import flask
 import flask_socketio
 from utils.ws_logger import WebSocketLogger

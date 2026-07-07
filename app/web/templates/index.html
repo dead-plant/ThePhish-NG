@@ -7,11 +7,10 @@
 	<title>ThePhish</title>
 	<link rel="icon" type="image/png" sizes="1000x999" href="../static/assets/img/logo_rounded.png">
 	<link rel="stylesheet" href="../static/assets/bootstrap/css/bootstrap.min.css">
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i">
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Courier+Prime">
+	<link rel="stylesheet" href="../static/assets/fonts/fonts.css">
 	<link rel="stylesheet" href="../static/assets/fonts/font-awesome.min.css">
-	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.5.2/animate.min.css">
-	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.css">
+	<link rel="stylesheet" href="../static/assets/lib/animate.min.css">
+	<link rel="stylesheet" href="../static/assets/lib/aos.css">
 </head>
 
 <body id="page-top">
@@ -19,11 +18,12 @@
 		<nav class="navbar navbar-dark align-items-start sidebar sidebar-dark accordion bg-gradient-primary p-0" style="color: var(--bs-gray-dark);background: linear-gradient(135deg, rgb(40,106,149) 0%, rgb(255,255,255) 100%), rgb(40,106,149);max-width: 114px;">
 			<div class="container d-flex flex-column p-0">
 				<hr class="sidebar-divider my-0">
-				<ul class="navbar-nav text-light" id="accordionSidebar">
+				<ul style="height: 96vh" class="navbar-nav flex-column text-light" id="accordionSidebar">
 					<li class="nav-item"><a class="nav-link active" href="/" style="max-width: 114px;" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="../static/assets/img/logo_rounded.png" style="margin-top: 0px;margin-left: 0px;"></a></li>
 					<li class="nav-item"><a class="nav-link" href="http://thehive:9000" style="max-width: 114px;" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="../static/assets/img/thehive.png" style="margin-right: 0px;margin-left: 0px;"></a></li>
 					<li class="nav-item"><a class="nav-link" href="http://cortex:9001" style="max-width: 114px;" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="../static/assets/img/cortex.png" style="transform: translate(0px);"></a></li>
 					<li class="nav-item"><a class="nav-link" href="https://misp" style="max-width: 114px;" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="../static/assets/img/misp.png" style="transform: translate(0px);"></a></li>
+					<li class="nav-item mt-auto"><a class="nav-link" href="https://github.com/dead-plant/ThePhish-NG" style="max-width: 114px;" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="../static/assets/img/github-logo.svg" style="transform: translate(0px);"></a></li>
 				</ul>
 				<div class="text-center d-none d-md-inline"></div>
 			</div>
@@ -77,15 +77,15 @@
 			</div>
 			<footer class="bg-white sticky-footer">
 				<div class="container my-auto">
-					<div class="text-center my-auto copyright"><span></span></div>
+					<div class="text-center my-auto copyright"><span>ThePhish-NG is a modified fork of ThePhish from emalderson (https://github.com/emalderson/ThePhish).</span></div>
 				</div>
 			</footer>
 		</div>
 	</div>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+	<script src="../static/assets/lib/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="></script>
 	<script src="../static/assets/bootstrap/js/bootstrap.min.js"></script>
 	<script src="../static/assets/js/bs-init.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.js"></script>
+	<script src="../static/assets/lib/aos.js"></script>
 	<script src="../static/assets/js/theme.js"></script>
 	<script src="../static/assets/js/thephish.js"></script>
 </body>
