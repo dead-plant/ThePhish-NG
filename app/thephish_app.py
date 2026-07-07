@@ -1,18 +1,26 @@
+import json
 import logging
+import os
+from pathlib import Path
+import sys
+import traceback
 
 from gevent import monkey
 monkey.patch_all()
 
 import flask
 import flask_socketio
+
+APP_DIR = Path(__file__).resolve().parent
+if str(APP_DIR) not in sys.path:
+	sys.path.insert(0, str(APP_DIR))
+
 from utils.ws_logger import WebSocketLogger
 import list_emails
 import case_from_email
 import run_analysis
 import markupsafe
 import utils.log
-import json
-import traceback
 
 app = flask.Flask(__name__, template_folder='web/templates', static_folder='web/static')
 socketio = flask_socketio.SocketIO(app)
@@ -60,13 +68,15 @@ def analyze_email():
 	response = flask.jsonify(verdict)
 	return response
 
-# If eventlet or gevent are installed, their wsgi server will be used
-# else Werkzeug will be used
-if __name__ == "__main__":
+def main():
+	global log, config
+
+	os.chdir(APP_DIR)
+
 	# get logger for main
 	log = utils.log.get_logger("thephish_app")
 	if log is None:
-		exit(1)
+		return 1
 
 	# load config
 	try:
@@ -74,8 +84,15 @@ if __name__ == "__main__":
 			config = json.load(conf_file)
 	except Exception as e:
 		log.error("Error while trying to open the file 'conf/configuration.json': {}".format(traceback.format_exc()))
-		exit(1)
+		return 1
 
 	# run application
 	socketio.run(app, host='0.0.0.0', port=8080)
+	return 0
+
+
+# If eventlet or gevent are installed, their wsgi server will be used
+# else Werkzeug will be used
+if __name__ == "__main__":
+	raise SystemExit(main())
 
