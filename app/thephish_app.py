@@ -32,7 +32,11 @@ config: dict
 # The main page
 @app.route("/")
 def homepage():
-	return flask.render_template("index.html")
+	thehive = config['web']['navbar']['thehive']
+	cortex = config['web']['navbar']['cortex']
+	misp = config['web']['navbar']['misp']
+
+	return flask.render_template("index.html", conf_web_navbar_thehive=thehive, conf_web_navbar_cortex=cortex, conf_web_navbar_misp=misp)
 
 @app.route('/list', methods = ['GET'])
 def obtain_emails_to_analyze():

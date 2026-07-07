@@ -1,4 +1,11 @@
 {
+  "web" : {
+    "navbar" : {
+      "thehive" : "https://link-to-thehive/",
+      "cortex" : "https://link-to-cortex/",
+      "misp" : "https://link-to-misp/"
+    }
+  },
   "imap" : {
     "host" : "imap.gmail.com",
     "port" : "993",
