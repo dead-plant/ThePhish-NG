@@ -80,9 +80,9 @@ function list_emails(){
 	progress_bar.classList.remove("d-none");
 	progress_bar.firstElementChild.classList.add("progress-bar-animated");
 	progress_bar.firstElementChild.innerHTML = "<strong>Retrieving emails...</strong>";
-	// Prepare the AJAX GET request to the path /list
+	// Prepare the AJAX GET request to the path /api/list
 	let xhr = new XMLHttpRequest();
-	xhr.open('GET', 'list', true);
+	xhr.open('GET', '/api/list', true);
 	// Function called when the response is available
 	xhr.onreadystatechange = function() {
 		if(xhr.readyState == 4) {
@@ -173,9 +173,9 @@ function analyze_email(thisBtn){
 	progress_bar.firstElementChild.classList.add("progress-bar-animated");
 	progress_bar.firstElementChild.innerHTML = "<strong>Analyzing...</strong>";
 	log_text.classList.remove("d-none")
-	// Prepare the AJAX POST request to the path /analysis
+	// Prepare the AJAX POST request to the path /api/analysis
 	let xhr = new XMLHttpRequest();
-	xhr.open('POST', 'analysis', true);
+	xhr.open('POST', '/api/analysis', true);
 	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
 	// Function called when the response is available
 	xhr.onreadystatechange = function() {
