@@ -1,9 +1,12 @@
 import json
 import logging
+from pathlib import Path
 import re
 import traceback
 from typing import Optional
 from utils.ws_logger import WebSocketLogger
+
+CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 
 
 def load(log: logging.Logger, wsl: Optional[WebSocketLogger] = None) -> Optional[dict]:
@@ -14,7 +17,7 @@ def load(log: logging.Logger, wsl: Optional[WebSocketLogger] = None) -> Optional
 
 	whitelist = {}
 	try:
-		with open('conf/whitelist.json') as whitelist_file:
+		with open(CONFIG_DIR / 'whitelist.json') as whitelist_file:
 			whitelist_dict = json.load(whitelist_file)
 			whitelist['mailExact'] = whitelist_dict['exactMatching']['mail']
 			whitelist['mailRegex'] = whitelist_dict['regexMatching']['mail']
@@ -35,9 +38,9 @@ def load(log: logging.Logger, wsl: Optional[WebSocketLogger] = None) -> Optional
 			whitelist['regexDomainsInEmails'] = [r'^.+@(.+\.|){0}$'.format(domain.replace(r'.', r'\.')) for domain in whitelist_dict['domainsInEmails']]
 
 	except Exception as e:
-		log.error("Error while trying to open the file 'conf/whitelist.json': {}".format(traceback.format_exc()))
+		log.error("Error while trying to open the file 'config/whitelist.json': {}".format(traceback.format_exc()))
 		if wsl is not None:
-			wsl.emit_error("Error while trying to open the file 'conf/whitelist.json'")
+			wsl.emit_error("Error while trying to open the file 'config/whitelist.json'")
 		return None
 
 	return whitelist

@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 from pathlib import Path
 import sys
 import traceback
@@ -12,6 +11,7 @@ import flask
 import flask_socketio
 
 APP_DIR = Path(__file__).resolve().parent
+CONFIG_DIR = APP_DIR.parent / "config"
 if str(APP_DIR) not in sys.path:
 	sys.path.insert(0, str(APP_DIR))
 
@@ -71,8 +71,6 @@ def analyze_email():
 def main():
 	global log, config
 
-	os.chdir(APP_DIR)
-
 	# get logger for main
 	log = utils.log.get_logger("thephish_app")
 	if log is None:
@@ -80,10 +78,10 @@ def main():
 
 	# load config
 	try:
-		with open('conf/configuration.json') as conf_file:
+		with open(CONFIG_DIR / 'configuration.json') as conf_file:
 			config = json.load(conf_file)
 	except Exception as e:
-		log.error("Error while trying to open the file 'conf/configuration.json': {}".format(traceback.format_exc()))
+		log.error("Error while trying to open the file 'config/configuration.json': {}".format(traceback.format_exc()))
 		return 1
 
 	# run application

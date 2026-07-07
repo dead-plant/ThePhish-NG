@@ -5,12 +5,15 @@ import time
 import random
 import string
 import traceback
+from pathlib import Path
 from thehive4py import TheHiveApi
 from thehive4py.types.case import OutputCase
 from cortex4py.api import Api
 import utils.log
 import utils.whitelist
 from utils.ws_logger import WebSocketLogger
+
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 
 # Global variable used for logging
 log: logging.Logger
@@ -704,12 +707,12 @@ def main(config: dict, wsl: WebSocketLogger, case: OutputCase, mail_to):
 
 	# Read the configuration file for the analyzers levels modification
 	try:
-		with open("conf/analyzers_level_conf.json") as conf_file:
+		with open(CONFIG_DIR / "analyzers_level_conf.json") as conf_file:
 			conf_analyzers_level = json.load(conf_file)
 	except Exception as e:
 		log.error(
-			"Error while trying to open the file 'conf/analyzers_level_conf.json': {}".format(traceback.format_exc()))
-		wsl.emit_error("Error while trying to open the file 'conf/analyzers_level_conf.json'")
+			"Error while trying to open the file 'config/analyzers_level_conf.json': {}".format(traceback.format_exc()))
+		wsl.emit_error("Error while trying to open the file 'config/analyzers_level_conf.json'")
 		return None
 
 	# Obtain the IDS of the three task of the case
