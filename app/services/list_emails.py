@@ -1,44 +1,37 @@
 import email
 import base64
-import imaplib
 import logging
 import traceback
 from pathlib import Path
 from typing import Optional, Any
 import bs4
 import magic
-import utils.config
-import utils.imap
+from imapclient import IMAPClient
+import utils.imap_pool
 
 # Global variable used for logging
 log = logging.getLogger(Path(__file__).stem)
 
 # Fetch all the unread emails in the specified folder that have an EML attachment and return their information
-def retrieve_emails(connection: imaplib.IMAP4 | imaplib.IMAP4_SSL) -> list[Any]:
-	config = utils.config.get()
-
-	# Read all the unseen email from this folder
-	connection.select(config['imap']['folder'])
-	typ, dat = connection.search(None, '(UNSEEN)')
+def retrieve_emails(connection: IMAPClient) -> list[Any]:
+	message_ids = connection.search(['UNSEEN'])
 	# The dat[0] variable contains the IDs of all the unread emails
 	# The IDs are obtained by using the split function and the length of the array is the number of unread emails
-	new_emails = len(dat[0].split())
+	new_emails = len(message_ids)
 	log.info("{} unread messages to process".format(new_emails))
 
 	# Variable that will contain the information related to the unread emails to show on the web interface
 	emails_info = []
 
 	# For each ID (unread email) in dat[0] select the RFC822 message 
-	for num in dat[0].split():
-		typ, dat = connection.fetch(num, '(RFC822)')
-		if typ != 'OK':
-			log.error(dat[-1])
-		message = dat[0][1]
+	for num in message_ids:
+		dat = connection.fetch([num], ['RFC822'])
+		message = dat[num][b'RFC822']
 
 		# When an email is read (fetched), it is flagged as seen
 		# To prevent that, it is flagged again as unseen by removing the seen flag
 		# That is because the email must be fetched again during the case creation procedure
-		connection.store(num, '-FLAGS', '\\Seen')
+		connection.remove_flags([num], ['\\Seen'])
 
 		# Obtain the Subject and From fields of the email 
 		msg = email.message_from_bytes(message)
@@ -184,7 +177,7 @@ def retrieve_emails(connection: imaplib.IMAP4 | imaplib.IMAP4_SSL) -> list[Any]:
 		# - Subject field of the internal email (EML attachment)
 		if (eml_attachment_found == True):
 			email_info = {}
-			email_info['mailUID'] = num.decode()
+			email_info['mailUID'] = str(num)
 			email_info['from'] = from_field
 			email_info['subject'] = subject_field
 			email_info['date'] = msg['Date']
@@ -201,16 +194,9 @@ def retrieve_emails(connection: imaplib.IMAP4 | imaplib.IMAP4_SSL) -> list[Any]:
 
 # Main function called from outside 
 def main() -> Optional[list[Any]]:
-	# Connect to IMAP server
 	try:
-		connection = utils.imap.connect()
-	except Exception as e:
-		log.error("Error while trying to connect to IMAP server: {}".format(traceback.format_exc()))
-		return None
-
-	# Call the retrieve_emails function
-	try:
-		emails_info = retrieve_emails(connection)
+		with utils.imap_pool.get_pool().connection() as connection:
+			emails_info = retrieve_emails(connection)
 	except Exception as e:
 		log.error("Error while trying to retrieve the emails: {}".format(traceback.format_exc()))
 		return None
