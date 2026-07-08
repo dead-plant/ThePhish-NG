@@ -14,7 +14,7 @@ from thehive4py import TheHiveApi
 
 import utils.config
 import utils.whitelist
-import utils.imap
+import utils.imap_pool
 from utils.ws_logger import WebSocketLogger
 
 import tempfile
@@ -80,21 +80,15 @@ def search_observables(buffer, wsl: WebSocketLogger):
 
 # Use the mail UID of the selected email to fetch only that email from the mailbox
 def obtain_eml(connection, mail_uid, wsl: WebSocketLogger):
-	config = utils.config.get()
-
-	# Read all the unseen emails from this folder
-	connection.select(config['imap']['folder'])
-	typ, dat = connection.search(None, '(UNSEEN)')
+	mail_uid = int(mail_uid)
+	message_ids = connection.search(['UNSEEN'])
 
 	# The dat[0] variable contains the IDs of all the unread emails
 	# The IDs are obtained by using the split function and the length of the array is the number of unread emails
 	# If the selected mail uid is present in the list, then process only that email
-	if mail_uid.encode() in dat[0].split():
-		typ, dat = connection.fetch(mail_uid.encode(), '(RFC822)')
-		if typ != 'OK':
-			log.error(dat[-1])
-			wsl.emit_error(dat[-1])
-		message = dat[0][1]
+	if mail_uid in message_ids:
+		dat = connection.fetch([mail_uid], ['RFC822'])
+		message = dat[mail_uid][b'RFC822']
 		# The fetch operation flags the message as seen by default
 		log.info("Message {0} flagged as read".format(mail_uid))
 		wsl.emit_info("Message {0} flagged as read".format(mail_uid))
@@ -433,17 +427,10 @@ def create_case(subject_field, observables_header, observables_body, attachments
 # Main function called from outside
 # The wsl is not a global variable to support multiple tabs
 def main(wsl: WebSocketLogger, mail_uid) -> Optional[tuple[Any | None, Any]]:
-	# Connect to IMAP server
-	try:
-		connection = utils.imap.connect(wsl)
-	except Exception as e:
-		log.error("Error while trying to connect to IMAP server: {}".format(traceback.format_exc()))
-		wsl.emit_error("Error while trying to connect to IMAP server")
-		return None
-
 	# Call the obtain_eml function
 	try:
-		internal_msg, external_from_field = obtain_eml(connection, mail_uid, wsl)
+		with utils.imap_pool.get_pool().connection() as connection:
+			internal_msg, external_from_field = obtain_eml(connection, mail_uid, wsl)
 	except Exception as e:
 		log.error("Error while trying to obtain the internal eml file: {}".format(traceback.format_exc()))
 		wsl.emit_error("Error while trying to obtain the internal eml file")
