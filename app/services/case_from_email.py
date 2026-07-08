@@ -12,10 +12,9 @@ import traceback
 import ioc_finder
 from thehive4py import TheHiveApi
 
-import utils.config
-import utils.whitelist
-import utils.imap_pool
-from utils.ws_logger import WebSocketLogger
+from app.utils import config as config_utils
+from app.utils import imap_pool, whitelist
+from app.utils.ws_logger import WebSocketLogger
 
 import tempfile
 import os
@@ -44,7 +43,7 @@ def search_observables(buffer, wsl: WebSocketLogger):
 	# Option to parse URLs without a scheme (e.g. without https://)
 	iocs['urls'] = ioc_finder.parse_urls(buffer, parse_urls_without_scheme=False)
 	for mail in iocs['email_addresses']:
-		if utils.whitelist.is_whitelisted('mail', mail):
+		if whitelist.is_whitelisted('mail', mail):
 			log.info("Skipped whitelisted observable mail: {0}".format(mail))
 			wsl.emit_info("Skipped whitelisted observable mail: {0}".format(mail))
 		else:
@@ -52,7 +51,7 @@ def search_observables(buffer, wsl: WebSocketLogger):
 			wsl.emit_info("Found observable mail: {0}".format(mail))
 			observables.append({'type': 'mail', 'value': mail})
 	for ip in iocs['ipv4s']:
-		if utils.whitelist.is_whitelisted('ip', ip):
+		if whitelist.is_whitelisted('ip', ip):
 			log.info("Skipped whitelisted observable ip: {0}".format(ip))
 			wsl.emit_info("Skipped whitelisted observable ip: {0}".format(ip))
 		else:
@@ -60,7 +59,7 @@ def search_observables(buffer, wsl: WebSocketLogger):
 			wsl.emit_info("Found observable ip: {0}".format(ip))
 			observables.append({'type': 'ip', 'value': ip})
 	for domain in iocs['domains']:
-		if utils.whitelist.is_whitelisted('domain', domain):
+		if whitelist.is_whitelisted('domain', domain):
 			log.info("Skipped whitelisted observable domain: {0}".format(domain))
 			wsl.emit_info("Skipped whitelisted observable domain: {0}".format(domain))
 		else:
@@ -68,7 +67,7 @@ def search_observables(buffer, wsl: WebSocketLogger):
 			wsl.emit_info("Found observable domain: {0}".format(domain))
 			observables.append({'type': 'domain', 'value': domain})
 	for url in iocs['urls']:
-		if utils.whitelist.is_whitelisted('url', url):
+		if whitelist.is_whitelisted('url', url):
 			log.info("Skipped whitelisted observable url: {0}".format(url))
 			wsl.emit_info("Skipped whitelisted observable url: {0}".format(url))
 		else:
@@ -235,7 +234,7 @@ def parse_eml(internal_msg, wsl: WebSocketLogger):
 			filename = part.get_filename()
 			if filename and mimetype:
 				# Add the attachment if it is not whitelisted (in terms of filename or filetype)
-				if utils.whitelist.is_whitelisted('filename', filename) or utils.whitelist.is_whitelisted(
+				if whitelist.is_whitelisted('filename', filename) or whitelist.is_whitelisted(
 						'filetype', mimetype):
 					log.info("Skipped whitelisted observable file: {0}".format(filename))
 					wsl.emit_info("Skipped whitelisted observable file: {0}".format(filename))
@@ -250,7 +249,7 @@ def parse_eml(internal_msg, wsl: WebSocketLogger):
 					hash_attachment = {}
 					hash_attachment['hashValue'] = sha256.hexdigest()
 					hash_attachment['hashedAttachment'] = filename
-					if utils.whitelist.is_whitelisted('hash', hash_attachment['hashValue']):
+					if whitelist.is_whitelisted('hash', hash_attachment['hashValue']):
 						log.info("Skipped whitelisted observable hash: {0}".format(hash_attachment['hashValue']))
 						wsl.emit_info("Skipped whitelisted observable hash: {0}".format(hash_attachment['hashValue']))
 					else:
@@ -279,7 +278,7 @@ def parse_eml(internal_msg, wsl: WebSocketLogger):
 
 # Create the case on TheHive and add the observables to it
 def create_case(subject_field, observables_header, observables_body, attachments, hashes_attachments, eml_file_tuple, api_thehive: TheHiveApi, wsl: WebSocketLogger):
-	config = utils.config.get()
+	config = config_utils.get()
 
 	# Create the case template first if it does not exist
 	case_templates = api_thehive.case_template.find(
@@ -429,7 +428,7 @@ def create_case(subject_field, observables_header, observables_body, attachments
 def main(wsl: WebSocketLogger, mail_uid) -> Optional[tuple[Any | None, Any]]:
 	# Call the obtain_eml function
 	try:
-		with utils.imap_pool.get_pool().connection() as connection:
+		with imap_pool.get_pool().connection() as connection:
 			internal_msg, external_from_field = obtain_eml(connection, mail_uid, wsl)
 	except Exception as e:
 		log.error("Error while trying to obtain the internal eml file: {}".format(traceback.format_exc()))
@@ -446,7 +445,7 @@ def main(wsl: WebSocketLogger, mail_uid) -> Optional[tuple[Any | None, Any]]:
 
 	# Create thehive api
 	try:
-		config = utils.config.get()
+		config = config_utils.get()
 		insecure = config['thehive']['tlsinsecure']
 		if insecure == "no":
 			verifycert = True

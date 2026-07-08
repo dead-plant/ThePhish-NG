@@ -2,16 +2,13 @@ from gevent import monkey
 monkey.patch_all()
 
 import json
-import logging
+import logging, logging.config
 from pathlib import Path
 import flask
 import flask_socketio
-from api import routes as api_routes
-from web import routes as web_routes
-import utils.analyzer_levels
-import utils.config
-import utils.log
-import utils.whitelist
+from app.api import routes as api_routes
+from app.web import routes as web_routes
+from app.utils import analyzer_levels, config, whitelist
 
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = APP_DIR.parent / "config"
@@ -61,10 +58,10 @@ def _initialize_from_json(filename: str, initialize):
 
 def main():
 	try:
-		_initialize_from_json("logging_conf.json", utils.log.initialize)
-		_initialize_from_json("configuration.json", utils.config.initialize)
-		_initialize_from_json("whitelist.json", utils.whitelist.initialize)
-		_initialize_from_json("analyzers_level_conf.json", utils.analyzer_levels.initialize)
+		_initialize_from_json("logging_conf.json", logging.config.dictConfig)
+		_initialize_from_json("configuration.json", config.initialize)
+		_initialize_from_json("whitelist.json", whitelist.initialize)
+		_initialize_from_json("analyzers_level_conf.json", analyzer_levels.initialize)
 	except RuntimeError as e:
 		print("[ERROR]_[thephish_app]: {}".format(e))
 		return 1
@@ -73,6 +70,7 @@ def main():
 	api_routes.init_routes(socketio)
 
 	socketio.run(app, host='0.0.0.0', port=8080)
+	log.info("app started")
 	return 0
 
 if __name__ == "__main__":

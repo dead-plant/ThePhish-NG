@@ -7,7 +7,7 @@ from typing import Optional, Any
 import bs4
 import magic
 from imapclient import IMAPClient
-import utils.imap_pool
+from app.utils import imap_pool
 
 # Global variable used for logging
 log = logging.getLogger(Path(__file__).stem)
@@ -195,7 +195,7 @@ def retrieve_emails(connection: IMAPClient) -> list[Any]:
 # Main function called from outside 
 def main() -> Optional[list[Any]]:
 	try:
-		with utils.imap_pool.get_pool().connection() as connection:
+		with imap_pool.get_pool().connection() as connection:
 			emails_info = retrieve_emails(connection)
 	except Exception as e:
 		log.error("Error while trying to retrieve the emails: {}".format(traceback.format_exc()))

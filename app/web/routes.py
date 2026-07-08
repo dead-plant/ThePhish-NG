@@ -1,5 +1,5 @@
 import flask
-import utils.config
+from app.utils import config as config_utils
 
 bp = flask.Blueprint("web", __name__, template_folder="templates", static_folder="static")
 
@@ -9,7 +9,7 @@ def init_routes():
 # The main page
 @bp.route("/")
 def homepage():
-	config = utils.config.get()
+	config = config_utils.get()
 	thehive = config['web']['navbar']['thehive']
 	cortex = config['web']['navbar']['cortex']
 	misp = config['web']['navbar']['misp']

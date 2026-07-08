@@ -9,10 +9,8 @@ from pathlib import Path
 from thehive4py import TheHiveApi
 from thehive4py.types.case import OutputCase
 from cortex4py.api import Api
-import utils.analyzer_levels
-import utils.config
-import utils.whitelist
-from utils.ws_logger import WebSocketLogger
+from app.utils import analyzer_levels, config as config_utils, whitelist
+from app.utils.ws_logger import WebSocketLogger
 
 # Global variable used for logging
 log = logging.getLogger(Path(__file__).stem)
@@ -117,7 +115,7 @@ def notify_start_of_analysis(case: OutputCase, task_id, mail_to, wsl: WebSocketL
 
 # Start the analyzers on the observables
 def analyze_observables(case: OutputCase, task_id, wsl: WebSocketLogger, api_thehive: TheHiveApi, api_cortex: Api):
-	config = utils.config.get()
+	config = config_utils.get()
 
 	# Start the second task
 	task_update = {
@@ -269,7 +267,7 @@ def analyze_observables(case: OutputCase, task_id, wsl: WebSocketLogger, api_the
 							unshortened_url = job_ul['report']['full']['url']
 					# Add the unshortened link as an observable to the case if not whitelisted
 					if len(unshortened_url) > 0:
-						if utils.whitelist.is_whitelisted('url', unshortened_url):
+						if whitelist.is_whitelisted('url', unshortened_url):
 							log.info("Skipped whitelisted observable url: {0}".format(unshortened_url))
 							wsl.emit_info("Skipped whitelisted observable url: {0}".format(unshortened_url))
 						else:
@@ -480,7 +478,7 @@ def analyze_observables(case: OutputCase, task_id, wsl: WebSocketLogger, api_the
 					# It is then used a configuration file which is a dictionary containing, for each analyzer that has to be modified:
 					# - dataType: types of the observables on which to apply the modification
 					# - level mapping
-					level = utils.analyzer_levels.map_level(job['analyzerName'], observable_info['type'], level)
+					level = analyzer_levels.map_level(job['analyzerName'], observable_info['type'], level)
 
 					# Save the level in the report
 					report_obs['analyzer_result'] = level
@@ -526,7 +524,7 @@ def analyze_observables(case: OutputCase, task_id, wsl: WebSocketLogger, api_the
 
 
 def terminate_analysis(case: OutputCase, task_id, mail_to, observables_info, reports_observables, wsl: WebSocketLogger, api_thehive: TheHiveApi, api_cortex: Api):
-	config = utils.config.get()
+	config = config_utils.get()
 
 	# Start the third task
 	task_update = {
@@ -654,7 +652,7 @@ def terminate_analysis(case: OutputCase, task_id, mail_to, observables_info, rep
 # The wsl is not a global variable to support multiple tabs
 # The mail_to parameter is the email address of the user to send notifications to
 def main(wsl: WebSocketLogger, case: OutputCase, mail_to):
-	config = utils.config.get()
+	config = config_utils.get()
 
 	# Create thehive api
 	try:

@@ -3,8 +3,8 @@ import json
 import flask
 import markupsafe
 
-from services import case_from_email, list_emails, run_analysis
-from utils.ws_logger import WebSocketLogger
+from app.services import case_from_email, list_emails, run_analysis
+from app.utils.ws_logger import WebSocketLogger
 
 bp = flask.Blueprint("api", __name__, url_prefix="/api")
 

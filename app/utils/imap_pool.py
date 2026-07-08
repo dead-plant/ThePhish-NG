@@ -12,10 +12,8 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable
-
 from imapclient import IMAPClient
-
-import utils.config
+from app.utils import config as config_utils
 
 log = logging.getLogger(Path(__file__).stem)
 
@@ -51,7 +49,7 @@ class IMAPConnectionPool:
         """Check out a connection. Returns it to the pool on clean exit, discards it if the block raised."""
         conn = self._acquire()
         try:
-            conn.select_folder(utils.config.get()["imap"]["folder"])
+            conn.select_folder(config_utils.get()["imap"]["folder"])
             yield conn
         except Exception:
             self._discard(conn)
@@ -137,7 +135,7 @@ class IMAPConnectionPool:
 def create_connection() -> IMAPClient:
     """Open, secure and authenticate a single IMAPClient connection
     based on the [imap] section of the application config."""
-    config = utils.config.get()
+    config = config_utils.get()
     imap = config["imap"]
 
     host = imap["host"]
