@@ -13,15 +13,24 @@ def initialize(analyzer_levels: dict):
 		raise ValueError("expected a JSON object at the top level")
 
 	for analyzer_name, analyzer_conf in analyzer_levels.items():
+		if not isinstance(analyzer_name, str):
+			log.error("Invalid analyzer level entry name: expected string, got %s", type(analyzer_name).__name__)
+			raise ValueError("analyzer names must be strings")
 		if not isinstance(analyzer_conf, dict):
 			log.error("Invalid analyzer level entry '%s': expected JSON object, got %s", analyzer_name, type(analyzer_conf).__name__)
 			raise ValueError("entry '{}' must be a JSON object".format(analyzer_name))
 		if not isinstance(analyzer_conf.get('dataType'), list):
 			log.error("Invalid analyzer level entry '%s.dataType': expected list", analyzer_name)
 			raise ValueError("entry '{}.dataType' must be a list".format(analyzer_name))
+		if not all(isinstance(data_type, str) for data_type in analyzer_conf.get('dataType')):
+			log.error("Invalid analyzer level entry '%s.dataType': expected only strings", analyzer_name)
+			raise ValueError("entry '{}.dataType' must contain only strings".format(analyzer_name))
 		if not isinstance(analyzer_conf.get('levelMapping'), dict):
 			log.error("Invalid analyzer level entry '%s.levelMapping': expected JSON object", analyzer_name)
 			raise ValueError("entry '{}.levelMapping' must be a JSON object".format(analyzer_name))
+		if not all(isinstance(source, str) and isinstance(target, str) for source, target in analyzer_conf.get('levelMapping').items()):
+			log.error("Invalid analyzer level entry '%s.levelMapping': expected string keys and values", analyzer_name)
+			raise ValueError("entry '{}.levelMapping' must contain only string keys and values".format(analyzer_name))
 		log.debug(
 			"Validated analyzer level config for %s: data_types=%s, mapped_levels=%s",
 			analyzer_name,
@@ -41,6 +50,16 @@ def get() -> dict:
 	return _analyzer_configs
 
 def map_level(analyzer_name: str, observable_type: str, level: str) -> str:
+	if not isinstance(analyzer_name, str):
+		log.error("Invalid analyzer_name type for level mapping: %s", type(analyzer_name).__name__)
+		raise TypeError("analyzer_name must be a string")
+	if not isinstance(observable_type, str):
+		log.error("Invalid observable_type type for level mapping: %s", type(observable_type).__name__)
+		raise TypeError("observable_type must be a string")
+	if not isinstance(level, str):
+		log.error("Invalid level type for level mapping: %s", type(level).__name__)
+		raise TypeError("level must be a string")
+
 	analyzer_conf = get().get(analyzer_name)
 	if analyzer_conf is None:
 		log.debug("No level mapping configured for analyzer '%s'; keeping level '%s'", analyzer_name, level)

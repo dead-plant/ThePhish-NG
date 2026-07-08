@@ -115,9 +115,19 @@ def is_whitelisted(obs_type: str, obs_value) -> bool:
 	# Check if an observable is whitelisted with an exact match or with a regex match
 	whitelist = get()
 
+	if not isinstance(obs_type, str):
+		log.error("Invalid whitelist observable type argument: expected string, got %s", type(obs_type).__name__)
+		raise TypeError("obs_type must be a string")
 	if obs_type not in _OBSERVABLE_TYPES:
 		log.error("Unsupported whitelist observable type requested: %s", obs_type)
-		raise KeyError("Unsupported whitelist observable type '{}'".format(obs_type))
+		raise ValueError("unsupported whitelist observable type '{}'".format(obs_type))
+	if not isinstance(obs_value, str):
+		log.error(
+			"Invalid whitelist observable value for type '%s': expected string, got %s",
+			obs_type,
+			type(obs_value).__name__,
+		)
+		raise TypeError("obs_value must be a string")
 
 	obs_value = obs_value.lower()
 
