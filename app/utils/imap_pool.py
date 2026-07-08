@@ -10,13 +10,11 @@ import queue
 import ssl
 import threading
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Callable
 from imapclient import IMAPClient
 from app.utils import config as config_utils
 
-log = logging.getLogger(Path(__file__).stem)
-
+log = logging.getLogger(__name__)
 
 class PoolClosedError(Exception):
     """Raised when acquiring from a pool that has been closed."""

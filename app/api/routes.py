@@ -1,10 +1,13 @@
 import json
+import logging
 
 import flask
 import markupsafe
 
 from app.services import case_from_email, list_emails, run_analysis
 from app.utils.ws_logger import WebSocketLogger
+
+log = logging.getLogger(__name__)
 
 bp = flask.Blueprint("api", __name__, url_prefix="/api")
 

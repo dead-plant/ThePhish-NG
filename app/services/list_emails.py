@@ -2,7 +2,6 @@ import email
 import base64
 import logging
 import traceback
-from pathlib import Path
 from typing import Optional, Any
 import bs4
 import magic
@@ -10,7 +9,7 @@ from imapclient import IMAPClient
 from app.utils import imap_pool
 
 # Global variable used for logging
-log = logging.getLogger(Path(__file__).stem)
+log = logging.getLogger(__name__)
 
 # Fetch all the unread emails in the specified folder that have an EML attachment and return their information
 def retrieve_emails(connection: IMAPClient) -> list[Any]:

@@ -12,7 +12,7 @@ from app.utils import analyzer_levels, config, whitelist
 
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = APP_DIR.parent / "config"
-log = logging.getLogger(Path(__file__).stem)
+log = logging.getLogger(__name__)
 app = flask.Flask(__name__, static_folder=None)
 socketio = flask_socketio.SocketIO(app)
 app.register_blueprint(web_routes.bp)
@@ -69,9 +69,6 @@ def main():
 	web_routes.init_routes()
 	api_routes.init_routes(socketio)
 
+	log.info("app starting...")
 	socketio.run(app, host='0.0.0.0', port=8080)
-	log.info("app started")
 	return 0
-
-if __name__ == "__main__":
-	raise SystemExit(main())

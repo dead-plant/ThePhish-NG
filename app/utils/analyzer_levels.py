@@ -1,4 +1,7 @@
+import logging
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 _analyzer_configs: Optional[dict] = None
 

@@ -1,5 +1,8 @@
+import logging
 import re
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 _whitelist: Optional[dict] = None
 

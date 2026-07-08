@@ -4,7 +4,6 @@ import hashlib
 import email
 import email.header, email.utils, email.parser, email.generator
 import logging
-from pathlib import Path
 from typing import Optional, Any
 import emoji
 import urllib.parse
@@ -30,7 +29,7 @@ def _save_tuple_to_tempfile(file_tuple):
 
 
 # Global variable used for logging
-log = logging.getLogger(Path(__file__).stem)
+log = logging.getLogger(__name__)
 
 
 # Use the ioc-finder module to extract observables from a string buffer and add to the list only if they are not whitelisted

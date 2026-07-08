@@ -5,7 +5,6 @@ import time
 import random
 import string
 import traceback
-from pathlib import Path
 from thehive4py import TheHiveApi
 from thehive4py.types.case import OutputCase
 from cortex4py.api import Api
@@ -13,7 +12,7 @@ from app.utils import analyzer_levels, config as config_utils, whitelist
 from app.utils.ws_logger import WebSocketLogger
 
 # Global variable used for logging
-log = logging.getLogger(Path(__file__).stem)
+log = logging.getLogger(__name__)
 
 # Utility functions
 def get_cortexjobid_by_thephish_search_id(api_cortex: Api, search_id) -> str:
