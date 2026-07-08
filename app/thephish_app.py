@@ -10,9 +10,11 @@ from app.api import routes as api_routes
 from app.web import routes as web_routes
 from app.utils import analyzer_levels, config, whitelist
 
+log = logging.getLogger(__name__)
+
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = APP_DIR.parent / "config"
-log = logging.getLogger(__name__)
+
 app = flask.Flask(__name__, static_folder=None)
 socketio = flask_socketio.SocketIO(app)
 app.register_blueprint(web_routes.bp)
@@ -59,6 +61,7 @@ def _initialize_from_json(filename: str, initialize):
 def main():
 	try:
 		_initialize_from_json("logging_conf.json", logging.config.dictConfig)
+		
 		_initialize_from_json("configuration.json", config.initialize)
 		_initialize_from_json("whitelist.json", whitelist.initialize)
 		_initialize_from_json("analyzers_level_conf.json", analyzer_levels.initialize)
@@ -69,6 +72,6 @@ def main():
 	web_routes.init_routes()
 	api_routes.init_routes(socketio)
 
-	log.info("app starting...")
+	log.info("starting application...")
 	socketio.run(app, host='0.0.0.0', port=8080)
 	return 0
