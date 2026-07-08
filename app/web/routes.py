@@ -1,17 +1,15 @@
 import flask
+import utils.config
 
-bp = flask.Blueprint("web", __name__)
+bp = flask.Blueprint("web", __name__, template_folder="templates", static_folder="static")
 
-config = None
-
-def init_routes(app_config):
-	global config
-
-	config = app_config
+def init_routes():
+	pass
 
 # The main page
 @bp.route("/")
 def homepage():
+	config = utils.config.get()
 	thehive = config['web']['navbar']['thehive']
 	cortex = config['web']['navbar']['cortex']
 	misp = config['web']['navbar']['misp']

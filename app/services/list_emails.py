@@ -1,18 +1,22 @@
 import email
 import base64
 import imaplib
+import logging
 import traceback
+from pathlib import Path
 from typing import Optional, Any
 import bs4
 import magic
-import utils.log
+import utils.config
 import utils.imap
 
 # Global variable used for logging
-log = None
+log = logging.getLogger(Path(__file__).stem)
 
 # Fetch all the unread emails in the specified folder that have an EML attachment and return their information
-def retrieve_emails(connection: imaplib.IMAP4 | imaplib.IMAP4_SSL, config: dict) -> list[Any]:
+def retrieve_emails(connection: imaplib.IMAP4 | imaplib.IMAP4_SSL) -> list[Any]:
+	config = utils.config.get()
+
 	# Read all the unseen email from this folder
 	connection.select(config['imap']['folder'])
 	typ, dat = connection.search(None, '(UNSEEN)')
@@ -196,23 +200,17 @@ def retrieve_emails(connection: imaplib.IMAP4 | imaplib.IMAP4_SSL, config: dict)
 	return emails_info
 
 # Main function called from outside 
-def main(config: dict) -> Optional[list[Any]]:
-	# create log
-	global log
-	log = utils.log.get_logger("list_emails")
-	if log is None:
-		return None
-
+def main() -> Optional[list[Any]]:
 	# Connect to IMAP server
 	try:
-		connection = utils.imap.connect(config, log)
+		connection = utils.imap.connect()
 	except Exception as e:
 		log.error("Error while trying to connect to IMAP server: {}".format(traceback.format_exc()))
 		return None
 
 	# Call the retrieve_emails function
 	try:
-		emails_info = retrieve_emails(connection, config)
+		emails_info = retrieve_emails(connection)
 	except Exception as e:
 		log.error("Error while trying to retrieve the emails: {}".format(traceback.format_exc()))
 		return None

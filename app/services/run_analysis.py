@@ -1,5 +1,5 @@
-import logging.config
 import json
+import logging
 import re
 import time
 import random
@@ -9,14 +9,13 @@ from pathlib import Path
 from thehive4py import TheHiveApi
 from thehive4py.types.case import OutputCase
 from cortex4py.api import Api
-import utils.log
+import utils.analyzer_levels
+import utils.config
 import utils.whitelist
 from utils.ws_logger import WebSocketLogger
 
-CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
-
 # Global variable used for logging
-log: logging.Logger
+log = logging.getLogger(Path(__file__).stem)
 
 # Utility functions
 def get_cortexjobid_by_thephish_search_id(api_cortex: Api, search_id) -> str:
@@ -65,8 +64,7 @@ def gen_thephish_search_id() -> str:
 	return f"{timestamp}_{random_chars}"
 
 # Send the notification to the user
-def notify_start_of_analysis(case: OutputCase, task_id, mail_to, wsl: WebSocketLogger, api_thehive: TheHiveApi,
-							 api_cortex: Api):
+def notify_start_of_analysis(case: OutputCase, task_id, mail_to, wsl: WebSocketLogger, api_thehive: TheHiveApi, api_cortex: Api):
 	# Add a description to the first task that is understood by the Mailer responder and start it
 	# The description must start with "mailto:<email>" and then continue with the body of the email to send to the user
 	# Uses [11:] to filter out the prefix [ThePhish] in the name of the case
@@ -118,8 +116,9 @@ def notify_start_of_analysis(case: OutputCase, task_id, mail_to, wsl: WebSocketL
 
 
 # Start the analyzers on the observables
-def analyze_observables(case: OutputCase, task_id, wsl: WebSocketLogger, config: dict, api_thehive: TheHiveApi,
-						api_cortex: Api, whitelist: dict, conf_analyzers_level: dict):
+def analyze_observables(case: OutputCase, task_id, wsl: WebSocketLogger, api_thehive: TheHiveApi, api_cortex: Api):
+	config = utils.config.get()
+
 	# Start the second task
 	task_update = {
 		"status": "InProgress"
@@ -270,7 +269,7 @@ def analyze_observables(case: OutputCase, task_id, wsl: WebSocketLogger, config:
 							unshortened_url = job_ul['report']['full']['url']
 					# Add the unshortened link as an observable to the case if not whitelisted
 					if len(unshortened_url) > 0:
-						if utils.whitelist.is_whitelisted(whitelist, 'url', unshortened_url):
+						if utils.whitelist.is_whitelisted('url', unshortened_url):
 							log.info("Skipped whitelisted observable url: {0}".format(unshortened_url))
 							wsl.emit_info("Skipped whitelisted observable url: {0}".format(unshortened_url))
 						else:
@@ -481,9 +480,7 @@ def analyze_observables(case: OutputCase, task_id, wsl: WebSocketLogger, config:
 					# It is then used a configuration file which is a dictionary containing, for each analyzer that has to be modified:
 					# - dataType: types of the observables on which to apply the modification
 					# - level mapping
-					if job['analyzerName'] in conf_analyzers_level:
-						if observable_info['type'] in conf_analyzers_level[job['analyzerName']]['dataType']:
-							level = conf_analyzers_level[job['analyzerName']]['levelMapping'][level]
+					level = utils.analyzer_levels.map_level(job['analyzerName'], observable_info['type'], level)
 
 					# Save the level in the report
 					report_obs['analyzer_result'] = level
@@ -528,8 +525,9 @@ def analyze_observables(case: OutputCase, task_id, wsl: WebSocketLogger, config:
 	return observables_info, reports_observables
 
 
-def terminate_analysis(case: OutputCase, task_id, mail_to, observables_info, reports_observables, wsl: WebSocketLogger,
-					   config: dict, api_thehive: TheHiveApi, api_cortex: Api):
+def terminate_analysis(case: OutputCase, task_id, mail_to, observables_info, reports_observables, wsl: WebSocketLogger, api_thehive: TheHiveApi, api_cortex: Api):
+	config = utils.config.get()
+
 	# Start the third task
 	task_update = {
 		"status": "InProgress"
@@ -655,17 +653,8 @@ def terminate_analysis(case: OutputCase, task_id, mail_to, observables_info, rep
 # Main function called from outside
 # The wsl is not a global variable to support multiple tabs
 # The mail_to parameter is the email address of the user to send notifications to
-def main(config: dict, wsl: WebSocketLogger, case: OutputCase, mail_to):
-	# Create Logger
-	global log
-	log = utils.log.get_logger("run_analysis")
-	if log is None:
-		return None
-
-	# Load whitelist
-	whitelist = utils.whitelist.load(log, wsl)
-	if whitelist is None:
-		return None
+def main(wsl: WebSocketLogger, case: OutputCase, mail_to):
+	config = utils.config.get()
 
 	# Create thehive api
 	try:
@@ -705,16 +694,6 @@ def main(config: dict, wsl: WebSocketLogger, case: OutputCase, mail_to):
 		wsl.emit_error("Error while trying to create cortex api")
 		return None
 
-	# Read the configuration file for the analyzers levels modification
-	try:
-		with open(CONFIG_DIR / "analyzers_level_conf.json") as conf_file:
-			conf_analyzers_level = json.load(conf_file)
-	except Exception as e:
-		log.error(
-			"Error while trying to open the file 'config/analyzers_level_conf.json': {}".format(traceback.format_exc()))
-		wsl.emit_error("Error while trying to open the file 'config/analyzers_level_conf.json'")
-		return None
-
 	# Obtain the IDS of the three task of the case
 	tasks = api_thehive.case.find_tasks(case_id=case["_id"])
 	task_ids = {}
@@ -736,9 +715,7 @@ def main(config: dict, wsl: WebSocketLogger, case: OutputCase, mail_to):
 
 	# Call the analyze_observables function
 	try:
-		observables_info, reports_observables = analyze_observables(case, task_ids['Analysis'], wsl, config,
-																	api_thehive, api_cortex, whitelist,
-																	conf_analyzers_level)
+		observables_info, reports_observables = analyze_observables(case, task_ids['Analysis'], wsl, api_thehive, api_cortex)
 	except Exception as e:
 		log.error("Error during the analysis task: {}".format(traceback.format_exc()))
 		wsl.emit_error("Error during the analysis task")
@@ -746,8 +723,7 @@ def main(config: dict, wsl: WebSocketLogger, case: OutputCase, mail_to):
 
 	# Call the terminate_analysis function
 	try:
-		verdict = terminate_analysis(case, task_ids['Result'], mail_to, observables_info, reports_observables, wsl,
-									 config, api_thehive, api_cortex)
+		verdict = terminate_analysis(case, task_ids['Result'], mail_to, observables_info, reports_observables, wsl, api_thehive, api_cortex)
 	except Exception as e:
 		log.error("Error during the termination of the analysis: {}".format(traceback.format_exc()))
 		wsl.emit_error("Error during the termination of the analysis")

@@ -1,13 +1,17 @@
 import ssl
-import logging
 import imaplib
+import logging
+from pathlib import Path
 from typing import Optional
 
+import utils.config
 from utils.ws_logger import WebSocketLogger
 
+log = logging.getLogger(Path(__file__).stem)
 
-def connect(config: dict, log: logging.Logger, wsl: Optional[WebSocketLogger] = None) -> imaplib.IMAP4_SSL | imaplib.IMAP4:
+def connect(wsl: Optional[WebSocketLogger] = None) -> imaplib.IMAP4_SSL | imaplib.IMAP4:
 	timeout = 5
+	config = utils.config.get()
 
 	host = config['imap']['host']
 	port = config['imap']['port']
