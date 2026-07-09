@@ -1,4 +1,10 @@
-from app.thephish_app import main
+from gevent import monkey
+monkey.patch_all()
+
+from app import create_app
+from app.extensions import socketio
+
+app = create_app()
 
 if __name__ == "__main__":
-	raise SystemExit(main())
+    socketio.run(app, host="0.0.0.0", port=8080)
