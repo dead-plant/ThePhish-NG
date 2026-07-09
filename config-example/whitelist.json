@@ -13,13 +13,6 @@
 		"filetype" : [],
 		"hash" : []
 	},
-	"domainsInSubdomains" : [
-      	"prod.outlook.com",
-		"outlook.office365.com",
-		"eu.iphmx.com"
-    ],
-	"domainsInURLs" : [],
-	"domainsInEmails" : [],
 	"regexMatching" : {
 		"mail" : [],
 		"ip" : [

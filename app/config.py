@@ -18,13 +18,13 @@ log = logging.getLogger(__name__)
 LOGGING_FILE = "logging.json"
 APP_CONF_FILE = "app.conf"
 WHITELIST_FILE = "whitelist.json"
-ANALYZER_OVERRIDES_FILE = "analyzer_level_overrides.json"
+ANALYZER_LEVEL_MAPPINGS_FILE = "analyzer_level_mappings.json"
 
 # --- Expected schema versions -----------------------------------------------
 EXPECTED_VERSIONS = {
     APP_CONF_FILE: 1,
     WHITELIST_FILE: 1,
-    ANALYZER_OVERRIDES_FILE: 1,
+    ANALYZER_LEVEL_MAPPINGS_FILE: 1,
 }
 
 EXAMPLE_CONFIG = "https://github.com/dead-plant/ThePhish-NG/tree/master/config-example"
@@ -35,7 +35,7 @@ class ConfigError(Exception):
 # --- Module-level state, populated once by init() ---------------------------
 _app_config: Optional[dict] = None
 _whitelist: Optional[dict] = None
-_analyzer_overrides: Optional[dict] = None
+_analyzer_level_mappings: Optional[dict] = None
 
 
 def _require(value, name):
@@ -55,9 +55,9 @@ def get_whitelist() -> dict:
     return _require(_whitelist, "whitelist")
 
 
-def get_analyzer_level_overrides() -> dict:
-    """Return the whole analyzer_level_overrides.json content. Treat as read-only."""
-    return _require(_analyzer_overrides, "analyzer level overrides")
+def get_analyzer_level_mappings() -> dict:
+    """Return the whole analyzer_level_mappings.json content. Treat as read-only."""
+    return _require(_analyzer_level_mappings, "analyzer level mappings")
 
 
 # --- Loading helpers --------------------------------------------------------
@@ -131,7 +131,7 @@ def init(config_dir: Path) -> None:
     Call once before the rest of the app starts. Raises ConfigError with a
     user-facing message on any problem.
     """
-    global _app_config, _whitelist, _analyzer_overrides
+    global _app_config, _whitelist, _analyzer_level_mappings
 
     config_dir = config_dir.resolve()
     if not config_dir.is_dir():
@@ -152,5 +152,5 @@ def init(config_dir: Path) -> None:
     _whitelist = _load_versioned_json(config_dir / WHITELIST_FILE, EXPECTED_VERSIONS[WHITELIST_FILE])
     log.info("Loaded %s", WHITELIST_FILE)
 
-    _analyzer_overrides = _load_versioned_json(config_dir / ANALYZER_OVERRIDES_FILE, EXPECTED_VERSIONS[ANALYZER_OVERRIDES_FILE])
-    log.info("Loaded %s", ANALYZER_OVERRIDES_FILE)
+    _analyzer_level_mappings = _load_versioned_json(config_dir / ANALYZER_LEVEL_MAPPINGS_FILE, EXPECTED_VERSIONS[ANALYZER_LEVEL_MAPPINGS_FILE])
+    log.info("Loaded %s", ANALYZER_LEVEL_MAPPINGS_FILE)

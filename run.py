@@ -39,7 +39,10 @@ def main() -> None:
 
     log.info(f"Starting server on {server_cfg["bind_addr"]}:{server_cfg["port"]}")
 
-    socketio.run(app, host=server_cfg["bind_addr"], port=server_cfg["port"])
+    try:
+        socketio.run(app, host=server_cfg["bind_addr"], port=server_cfg["port"])
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == "__main__":
     main()
