@@ -2,6 +2,7 @@ nogit.*
 .venv/
 config/
 __pycache__/
+.coverage
 
 HELP.md
 target/
