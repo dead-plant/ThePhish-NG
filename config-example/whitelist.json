@@ -1,4 +1,5 @@
-{	
+{
+	"version": 1,
 	"exactMatching": {
 		"mail" : [],
 		"ip" : [
@@ -15,8 +16,7 @@
 	"domainsInSubdomains" : [
       	"prod.outlook.com",
 		"outlook.office365.com",
-		"eu.iphmx.com",
-		"protection.outlook.com"
+		"eu.iphmx.com"
     ],
 	"domainsInURLs" : [],
 	"domainsInEmails" : [],

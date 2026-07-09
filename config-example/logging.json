@@ -19,7 +19,7 @@
 			"handlers": ["handler_console"],
 			"level": "INFO"
 		},
-      	"thephish_app": {
+      	"thephish": {
 			"handlers": ["handler_console"],
 			"level": "INFO",
 			"propagate": false
