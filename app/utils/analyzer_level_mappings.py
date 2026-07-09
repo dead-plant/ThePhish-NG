@@ -10,7 +10,10 @@ def _verify_config(analyzer_levels: dict) -> dict:
                   type(analyzer_levels).__name__)
         raise ValueError("expected a JSON object at the top level")
 
+    verified_analyzer_levels = {}
     for analyzer_name, analyzer_conf in analyzer_levels.items():
+        if analyzer_name == 'version':
+            continue
         if not isinstance(analyzer_name, str):
             log.error("Invalid analyzer level entry name: expected string, got %s", type(analyzer_name).__name__)
             raise ValueError("analyzer names must be strings")
@@ -37,9 +40,10 @@ def _verify_config(analyzer_levels: dict) -> dict:
             analyzer_conf.get('dataType', []),
             sorted(analyzer_conf.get('levelMapping', {}).keys()),
         )
+        verified_analyzer_levels[analyzer_name] = analyzer_conf
 
-    log.info("Analyzer level configuration verified for %d analyzers", len(analyzer_levels))
-    return analyzer_levels
+    log.info("Analyzer level configuration verified for %d analyzers", len(verified_analyzer_levels))
+    return verified_analyzer_levels
 
 
 def get() -> dict:

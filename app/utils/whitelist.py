@@ -119,9 +119,9 @@ def is_whitelisted(obs_type: str, obs_value) -> bool:
 
     obs_value = obs_value.lower().strip()
 
-    if obs_value.isspace():
-        log.error("Invalid whitelist observable value for type '%s': value is empty", type(obs_type).__name__)
-        raise ObservableValueError("Invalid whitelist observable value for type '%s': value is empty", type(obs_type).__name__)
+    if not obs_value:
+        log.error("Invalid whitelist observable value for type '%s': value is empty", obs_type)
+        raise ObservableValueError("Invalid whitelist observable value for type '{}': value is empty".format(obs_type))
 
     found = False
     if (not found) and (obs_value in whitelist[obs_type + 'Exact']):
