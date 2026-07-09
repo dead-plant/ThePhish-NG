@@ -32,6 +32,28 @@ class IMAPLoginError(IMAPConnectionError):
     """Raised when authentication in an IMAP connection fails."""
 
 
+def _is_alive(conn: IMAPClient) -> bool:
+    try:
+        conn.noop()
+        return True
+    except Exception as e:
+        log.debug("IMAP connection health check failed: %s", e)
+        return False
+
+
+def _safe_logout(conn: IMAPClient) -> None:
+    try:
+        conn.logout()
+        log.debug("Logged out IMAP connection")
+    except Exception:
+        log.debug("IMAP logout failed; attempting socket shutdown", exc_info=True)
+        try:
+            conn.shutdown()
+            log.debug("Shutdown IMAP connection after logout failure")
+        except Exception:
+            log.warning("Failed to close IMAP connection cleanly", exc_info=True)
+                
+
 class IMAPConnectionPool:
     """A bounded pool of IMAPClient connections.
 
@@ -84,7 +106,7 @@ class IMAPConnectionPool:
                 conn = self._idle.get_nowait()
             except queue.Empty:
                 break
-            self._safe_logout(conn)
+            _safe_logout(conn)
             closed_idle += 1
         log.info("Closed IMAP connection pool; idle connections closed=%d", closed_idle)
 
@@ -107,11 +129,11 @@ class IMAPConnectionPool:
                     conn = self._idle.get_nowait()
                 except queue.Empty:
                     break
-                if self._is_alive(conn):
+                if _is_alive(conn):
                     log.debug("Reusing healthy idle IMAP connection")
                     return conn
                 log.warning("Discarding stale IMAP connection")
-                self._safe_logout(conn)
+                _safe_logout(conn)
 
             # Nothing idle, open a fresh connection
             log.debug("No idle IMAP connection available; opening a new connection")
@@ -124,7 +146,7 @@ class IMAPConnectionPool:
     def _release(self, conn: IMAPClient) -> None:
         if self._closed:
             log.debug("Pool closed while connection was checked out; logging out returned IMAP connection")
-            self._safe_logout(conn)
+            _safe_logout(conn)
             self._slots.release()
             return
         try:
@@ -133,35 +155,14 @@ class IMAPConnectionPool:
         except queue.Full:
             # Shouldn't happen, but be safe
             log.warning("IMAP idle pool is full while releasing a connection, this shouldn't happen; closing the extra connection")
-            self._safe_logout(conn)
+            _safe_logout(conn)
         finally:
             self._slots.release()
 
     def _discard(self, conn: IMAPClient) -> None:
         log.debug("Discarding IMAP connection")
-        self._safe_logout(conn)
+        _safe_logout(conn)
         self._slots.release()
-
-    def _is_alive(self, conn: IMAPClient) -> bool:
-        try:
-            conn.noop()
-            return True
-        except Exception as e:
-            log.debug("IMAP connection health check failed: %s", e)
-            return False
-
-    @staticmethod
-    def _safe_logout(conn: IMAPClient) -> None:
-        try:
-            conn.logout()
-            log.debug("Logged out IMAP connection")
-        except Exception:
-            log.debug("IMAP logout failed; attempting socket shutdown", exc_info=True)
-            try:
-                conn.shutdown()
-                log.debug("Shutdown IMAP connection after logout failure")
-            except Exception:
-                log.warning("Failed to close IMAP connection cleanly", exc_info=True)
 
 
 # Connection Factory
@@ -203,14 +204,14 @@ def create_connection() -> IMAPClient:
             conn = IMAPClient(host, port=port, ssl=False, timeout=5)
     except Exception as e:
         if conn is not None:
-            IMAPConnectionPool._safe_logout(conn)
+            _safe_logout(conn)
         raise IMAPConnectionError(f"Establishing IMAP connection failed: {e}") from e
 
     log.debug("Authenticating IMAP user '%s' against %s:%s", user, host, port)
     try:
         conn.login(user, password)
     except Exception as e:
-        IMAPConnectionPool._safe_logout(conn)
+        _safe_logout(conn)
         raise IMAPLoginError(f"Authenticating IMAP connection failed: {e}") from e
 
     log.info("Connected to %s@%s:%s/%s (tls=%s, insecure=%s)",user, host, port, tls_mode, tls_insecure)
