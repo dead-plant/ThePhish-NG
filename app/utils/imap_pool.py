@@ -5,6 +5,7 @@ Usage:
         conn.search(["UNSEEN"])
 """
 
+from typing import Optional
 import logging
 import queue
 import ssl
@@ -193,9 +194,8 @@ def create_connection() -> IMAPClient:
 
 
 # Module-level singleton, created lazily on first use.
-_pool: IMAPConnectionPool
+_pool: Optional[IMAPConnectionPool] = None
 _pool_lock = threading.Lock()
-
 
 def get_pool() -> IMAPConnectionPool:
     global _pool
