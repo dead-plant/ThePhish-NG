@@ -3,6 +3,7 @@ nogit.*
 config/
 __pycache__/
 .coverage
+.pytest*
 
 HELP.md
 target/
