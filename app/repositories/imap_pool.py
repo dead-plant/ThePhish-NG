@@ -81,7 +81,7 @@ class IMAPConnectionPool:
         log.info("Initialized IMAP connection pool: max_size=%d, acquire_timeout=%ss", max_size, acquire_timeout)
 
     @contextmanager
-    def connection(self, folder: str = config.get_app_config()["imap"]["folder"]):
+    def connection(self, folder: str):
         """Check out a connection. Returns it to the pool on clean exit, discards it if the block raised."""
         conn = self._acquire()
 
