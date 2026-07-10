@@ -81,13 +81,19 @@ class IMAPConnectionPool:
         log.info("Initialized IMAP connection pool: max_size=%d, acquire_timeout=%ss", max_size, acquire_timeout)
 
     @contextmanager
-    def connection(self):
+    def connection(self, folder: str = config.get_app_config()["imap"]["folder"]):
         """Check out a connection. Returns it to the pool on clean exit, discards it if the block raised."""
         conn = self._acquire()
+
         try:
-            folder = config.get_app_config()["imap"]["folder"]
             log.debug("Selecting IMAP folder '%s'", folder)
             conn.select_folder(folder)
+        except:
+            log.error("Failed to select IMAP folder '%s'", folder)
+            self._discard(conn)
+            raise IMAPConnectionError("Failed to select IMAP folder '%s'", folder)
+
+        try:
             yield conn
         except Exception:
             log.warning("Discarding IMAP connection after failure during use", exc_info=True)
