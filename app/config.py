@@ -115,7 +115,7 @@ def _init_logging(path: Path) -> None:
 
 def _load_versioned_toml(path: Path, expected_version: int) -> dict:
     data = _load_toml(path)              # 1. syntax
-    _check_version(path, data, EXPECTED_VERSIONS[APP_CONF_FILE])  # 2. version
+    _check_version(path, data, expected_version)  # 2. version
     return data
 
 
