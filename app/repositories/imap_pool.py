@@ -81,9 +81,10 @@ class IMAPConnectionPool:
         log.info("Initialized IMAP connection pool: max_size=%d, acquire_timeout=%ss", max_size, acquire_timeout)
 
     @contextmanager
-    def connection(self, folder: str):
+    def connection(self):
         """Check out a connection. Returns it to the pool on clean exit, discards it if the block raised."""
         conn = self._acquire()
+        folder = config.get_app_config()["imap"]["folder"]
 
         try:
             log.debug("Selecting IMAP folder '%s'", folder)
