@@ -87,7 +87,6 @@ class IMAPConnectionPool:
             log.debug("Selecting configured IMAP folder")
             conn.select_folder(folder)
         except Exception as exc:
-            log.debug("IMAP folder selection failed (%s)", type(exc).__name__)
             self._discard(conn)
             raise IMAPConnectionError("Failed to select the configured IMAP folder") from exc
 
@@ -121,7 +120,6 @@ class IMAPConnectionPool:
 
         log.debug("Attempting to acquire IMAP connection; idle_available=%d", self._idle.qsize())
         if not self._slots.acquire(timeout=self._acquire_timeout):
-            log.debug("Timed out after %ss waiting for an available IMAP connection", self._acquire_timeout)
             raise PoolTimeoutError(f"no IMAP connection available within {self._acquire_timeout}s")
 
         try:
@@ -201,7 +199,6 @@ def create_connection() -> IMAPClient:
         elif tls_mode == "none":
             conn = IMAPClient(host, port=port, ssl=False, timeout=5)
     except Exception as exc:
-        log.debug("Failed to establish IMAP connection to %s:%s with tls_mode %s and tls_insecure %s (%s)", host, port, tls_mode, tls_insecure, type(exc).__name__)
         if conn is not None:
             _safe_logout(conn)
         raise IMAPConnectionError(f"Failed to establish IMAP connection to {host}:{port} with tls_mode {tls_mode} and tls_insecure {tls_insecure}") from exc
@@ -210,7 +207,6 @@ def create_connection() -> IMAPClient:
     try:
         conn.login(user, password)
     except Exception as exc:
-        log.debug("Failed to authenticate IMAP connection to %s:%s (%s)", host, port, type(exc).__name__)
         _safe_logout(conn)
         raise IMAPLoginError(f"Failed to authenticate IMAP connection to {host}:{port}") from exc
 
