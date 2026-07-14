@@ -223,7 +223,7 @@ def list_analyzable(mark_invalid_seen: bool = True) -> list[AnalyzableEmail]:
         return analyzable
 
 
-def get_analyzable_eml(mail_uid: int) -> tuple[email.message.Message, str]:
+def fetch_analyzable_eml(mail_uid: int) -> tuple[email.message.Message, str]:
     """Fetch one email by UID and return (attached EML, parent sender address).
 
     The fetch flags the email as seen.
