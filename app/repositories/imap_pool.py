@@ -173,22 +173,22 @@ def create_connection() -> IMAPClient:
     host = imap_config["host"]
     port = imap_config["port"]
     tls_mode = imap_config["tls_mode"]
-    tls_insecure = imap_config["tls_insecure"]
+    tls_verify = imap_config["tls_verify"]
     user = imap_config["user"]
     password = imap_config["password"]
 
-    if type(tls_insecure) != bool:
-        raise TypeError("imap.tlsinsecure must be a boolean")
+    if type(tls_verify) != bool:
+        raise TypeError("imap.tls_verify must be a boolean")
 
     if tls_mode != "tls" and tls_mode != "starttls" and tls_mode != "none":
         raise ValueError("imap.tls_mode must be 'tls', 'starttls' or 'none'")
 
-    log.debug("Opening IMAP connection to %s:%s with tls_mode=%s and tls_insecure=%s", host, port, tls_mode, tls_insecure)
+    log.debug("Opening IMAP connection to %s:%s with tls_mode=%s and tls_verify=%s", host, port, tls_mode, tls_verify)
     conn: IMAPClient | None = None
     try:
-        if tls_insecure == "no":
+        if tls_verify:
             ctx = ssl.create_default_context()
-        elif tls_insecure == "yes":
+        else:
             ctx = ssl._create_unverified_context()
 
         if tls_mode == "tls":
@@ -201,7 +201,7 @@ def create_connection() -> IMAPClient:
     except Exception as exc:
         if conn is not None:
             _safe_logout(conn)
-        raise IMAPConnectionError(f"Failed to establish IMAP connection to {host}:{port} with tls_mode {tls_mode} and tls_insecure {tls_insecure}") from exc
+        raise IMAPConnectionError(f"Failed to establish IMAP connection to {host}:{port} with tls_mode {tls_mode} and tls_verify {tls_verify}") from exc
 
     log.debug("Authenticating IMAP connection to %s:%s", host, port)
     try:
@@ -210,7 +210,7 @@ def create_connection() -> IMAPClient:
         _safe_logout(conn)
         raise IMAPLoginError(f"Failed to authenticate IMAP connection to {host}:{port}") from exc
 
-    log.debug("Connected to IMAP server %s:%s (tls=%s, insecure=%s)", host, port, tls_mode, tls_insecure)
+    log.debug("Connected to IMAP server %s:%s (tls=%s, insecure=%s)", host, port, tls_mode, tls_verify)
     return conn
 
 

@@ -1,17 +1,31 @@
 import logging
-from typing import Literal, Optional, TypedDict
-import thehive4py
-from thehive4py.types.case_template import OutputCaseTemplate
+from typing import Literal, Optional, TypedDict, Final
+from thehive4py import TheHiveApi
 from thehive4py.types.case import OutputCase, ImpactStatusValue, CaseStatusValue
-from thehive4py.types.observable import OutputObservable
-from thehive4py.types.task import OutputTask
+from thehive4py.types.case_template import OutputCaseTemplate
 from thehive4py.types.cortex import OutputResponderAction, OutputAnalyzerJob, OutputAnalyzer, OutputResponder
-from thehive4py.types.task import InputTask
+from thehive4py.types.observable import OutputObservable
+from thehive4py.types.task import OutputTask, InputTask
 from app import config
 
 log = logging.getLogger(__name__)
 
+# create thehive4py api client
+try:
+    url = config.get_app_config()["thehive"]["url"]
+    apikey = config.get_app_config()["thehive"]["apikey"]
+    tls_verify = config.get_app_config()["thehive"]["tls_verify"]
 
+    if type(tls_verify) != bool:
+        raise TypeError("thehive.tls_verify must be a boolean")
+
+    _client: Final = TheHiveApi(url=url, apikey=apikey, verify=tls_verify)
+    log.info("Created TheHiveApi instance")
+except Exception as exc:
+    log.error("Failed to create TheHiveApi instance", exc_info=exc)
+    raise exc
+
+# types
 TaskStatusValue = Literal[
     "Waiting",
     "InProgress",
@@ -25,6 +39,7 @@ class AnalyzerJob(TypedDict):
     analyzer_id: str
 
 
+# exceptions
 class TheHiveRequestError(Exception):
     """Thrown when the request to the TheHive api fails"""
 
@@ -57,7 +72,7 @@ def create_case_template_unless_exists(*, name: str, title_prefix: str, tasks: l
 
 
 # case
-def create_case(*, title: str, tlp: int, pap: int, tags: list[str], description: str, template: str, flag: bool= False) -> OutputCase:
+def create_case(*, title: str, tlp: int, pap: int, tags: list[str], description: str, template: str, flag: bool = False) -> OutputCase:
     """Create a case.
 
         Args:
@@ -99,7 +114,7 @@ def export_case(case_id: str, misp_id: str) -> None:
     ...
 
 
-def close_case(*, case_id: str, status: CaseStatusValue, summary: str, impact_status: ImpactStatusValue="NotApplicable") -> None:
+def close_case(*, case_id: str, status: CaseStatusValue, summary: str, impact_status: ImpactStatusValue = "NotApplicable") -> None:
     """Close a case.
         Args:
             case_id: The id of the case.
@@ -243,7 +258,7 @@ def create_responder_action(*, responder_id: str, object_type: str, object_id: s
     ...
 
 
-def list_responders_for_entity(entity_type: str, entity_id: str= "") -> list[OutputResponder]:
+def list_responders_for_entity(entity_type: str, entity_id: str = "") -> list[OutputResponder]:
     """List all responders compatible with a given entity type.
     Args:
         entity_type: The entity type to list responders for.
@@ -268,8 +283,9 @@ def get_responder_action(entity_type: str, entity_id: str) -> OutputResponderAct
     """
     ...
 
+
 # analyzers
-def create_analyzer_job(cortex_id:str, analyzer_job: AnalyzerJob) -> OutputAnalyzerJob:
+def create_analyzer_job(cortex_id: str, analyzer_job: AnalyzerJob) -> OutputAnalyzerJob:
     """Create an analyzer job.
         Args:
             cortex_id: ID of the cortex server to run the job on.
@@ -281,7 +297,7 @@ def create_analyzer_job(cortex_id:str, analyzer_job: AnalyzerJob) -> OutputAnaly
     ...
 
 
-def bulk_create_analyzer_jobs(cortex_id:str, analyzer_jobs: list[AnalyzerJob]) -> list[OutputAnalyzerJob]:
+def bulk_create_analyzer_jobs(cortex_id: str, analyzer_jobs: list[AnalyzerJob]) -> list[OutputAnalyzerJob]:
     """Create multiple analyzer jobs.
         Args:
             cortex_id: ID of the cortex server to run the job on.
