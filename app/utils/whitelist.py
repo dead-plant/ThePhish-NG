@@ -91,7 +91,6 @@ def _build_whitelist(whitelist_dict: dict) -> dict:
     return whitelist
 
 def get() -> dict:
-    log.debug("Whitelist requested")
     return _whitelist
 
 def is_whitelisted(obs_type: str, obs_value) -> bool:

@@ -37,7 +37,6 @@ def _verify_config(analyzer_levels: dict) -> dict:
 
 
 def get() -> dict:
-    log.debug("Analyzer level configuration requested")
     return _analyzer_configs
 
 

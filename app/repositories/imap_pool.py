@@ -222,5 +222,4 @@ def create_connection() -> IMAPClient:
 _pool: IMAPConnectionPool = IMAPConnectionPool(factory=create_connection, max_size=5)
 
 def get_pool() -> IMAPConnectionPool:
-    log.debug("IMAPConnectionPool requested")
     return _pool
