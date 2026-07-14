@@ -113,13 +113,13 @@ def is_whitelisted(obs_type: str, obs_value) -> bool:
     found = False
     if (not found) and (obs_value in whitelist[obs_type + 'Exact']):
         found = True
-        log.debug("Observable whitelisted by exact match: type=%s", obs_type)
+        log.debug("Observable whitelisted by exact match: type=%s, obs_value=%s", obs_type, obs_value)
 
     if (not found) and (obs_type not in ['hash', 'filetype']):
         for regex in whitelist[obs_type+'Regex']:
             if re.search(regex, obs_value):
                 found = True
-                log.debug("Observable whitelisted by regex match: type=%s", obs_type)
+                log.debug("Observable whitelisted by regex match: type=%s, obs_value=%s", obs_type, obs_value)
                 break
     if not found:
         log.debug("Observable not whitelisted: type=%s", obs_type)
