@@ -4,6 +4,7 @@ config/
 __pycache__/
 .coverage
 .pytest*
+pytest-cache*
 
 HELP.md
 target/
