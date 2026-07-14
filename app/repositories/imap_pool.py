@@ -177,8 +177,8 @@ def create_connection() -> IMAPClient:
     user = imap_config["user"]
     password = imap_config["password"]
 
-    if tls_insecure != "yes" and tls_insecure != "no":
-        raise ValueError("imap.tlsinsecure must be 'yes' or 'no'")
+    if type(tls_insecure) != bool:
+        raise TypeError("imap.tlsinsecure must be a boolean")
 
     if tls_mode != "tls" and tls_mode != "starttls" and tls_mode != "none":
         raise ValueError("imap.tls_mode must be 'tls', 'starttls' or 'none'")
