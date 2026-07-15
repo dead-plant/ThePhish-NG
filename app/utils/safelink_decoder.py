@@ -45,15 +45,17 @@ def is_safelink(url: str) -> bool:
     Raises:
         ValueError: If the passed url is None or empty
     """
-
+    # validate input
     if url is None or not url.strip():
         raise ValueError("Url cannot be Null or empty.")
 
+    # get host of url
     host = urllib.parse.urlparse(url).hostname
     if host is None:
         log.debug("URL %r has no hostname and is not a Safelink", url)
         return False
 
+    # check if host matches the safelink pattern
     is_safe_link = bool(SAFE_LINK_DOMAIN_PATTERN.search(host))
     log.debug("Checked if host %r is a Safelink: %s", host, is_safe_link)
     return is_safe_link
@@ -74,36 +76,45 @@ def decode_safelink(safelink: str) -> str:
             DecodingMaxDepthError: If the safelink passes the max depth limit.
             LoopingSafeLinkError: If decoding a safelink returns a previous safelink.
     """
+    # validate input
     if not is_safelink(safelink):
         raise NotASafeLinkError("Passed url is not a Safelink")
 
+    # initialize variables
     log.debug("Decoding Safelink %r", safelink)
     url = safelink.strip()
     history = [url]
     depth = 0
 
+    # loop (decode layered safelinks)
     while is_safelink(url):
+        # check if exceeding max depth
         if depth >= MAX_DEPTH:
             raise DecodingMaxDepthError(url)
 
+        # decode the url param of the safelink
         try:
             url_params = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get("url")
         except Exception as exc:
             raise SafeLinkDecodingError("Couldn't decode the safelink.") from exc
 
+        # raise exception if decoding the url params didn't return exactly one
         if not url_params or len(url_params) != 1:
             count = len(url_params) if url_params else 0
             raise SafeLinkDecodingError(f"Expected exactly 1 url parameter, got {count}")
         url = url_params[0]
 
+        # check if decoded url is empty
         if not url.strip():
             raise SafeLinkDecodingError("Got empty url.")
 
+        # check if url is in history -> loop
         if url in history:
             raise LoopingSafeLinkError(url)
         else:
             history.append(url)
 
+        # increase depth counter and log
         depth += 1
         log.debug("Decoded Safelink layer %d to %r", depth, url)
 
