@@ -1,7 +1,10 @@
-import logging
 from gevent import monkey
 monkey.patch_all()
 
+import truststore
+truststore.inject_into_ssl()
+
+import logging
 import argparse
 import sys
 from pathlib import Path
