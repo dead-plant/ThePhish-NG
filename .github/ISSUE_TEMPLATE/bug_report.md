@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help ThePhish improve.
+about: Create a report to help ThePhish-NG improve.
 title: "[BUG]"
 labels: bug
 assignees: ''
@@ -13,21 +13,21 @@ A clear and concise description of what the bug is.
 
 **Work environment**
 
-| Question                   | Answer                                |
-| -------------------------- | ------------------------------------- |
-| OS version (server)        | Debian, Ubuntu, CentOS, RedHat, ...   |
-| OS version (client)        | XP, Seven, 10, Ubuntu, ...            |
-| Python version | |
-| Type of email address used | Gmail, Hotmail, ... |
-| Mail client type & version | Thunderbird, Gmail, ... |
-| Browser type & version     | Firefox, Chrome, Edge, Opera, ...                    |
-| Virtualized  Env.          | True / False                          |
-| Dedicated RAM              | XX GB                                 |
-| vCPU                       | 4 / 8 / 16 / 32                       |
-| ThePhish version  |           |
-| TheHive version  |           |
-| Cortex version  |           |
-| MISP version  |           |
+| Question                   | Answer                                       |
+|----------------------------|----------------------------------------------|
+| OS version                 | Debian 13, Ubuntu 22.04, CentOS, RedHat, ... |
+| OS-Virtualizazion          | No, KVM, Proxmox-lxc, Docker, ...            |
+| Dedicated RAM              | XX GB                                        |
+| vCPU                       | 2 / 4 / 8 / 16                               |
+| Python version             | 3.12, 3.13, ...                              |
+| Python venv?               | yes / no                                     |
+| E-Mail provider            | Gmail, Hotmail, Private Server, ...          |
+| Mail client type & version | Thunderbird, Gmail, ...                      |
+| Browser type & version     | Firefox, Chrome, Edge, Opera, ...            |
+| ThePhish-NG version        |                                              |
+| TheHive version            |                                              |
+| Cortex version             |                                              |
+| MISP version               |                                              |
 
 **To Reproduce**
 
