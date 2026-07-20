@@ -11,6 +11,12 @@ let go_back_link = document.getElementById("goBackLink");
 let log_text = document.getElementById("logText");
 let log_text_par = log_text.getElementsByTagName("p")[0]
 
+const listErrorCodes = new Set([
+	"imap_connection_failed",
+	"internal_server_error",
+]);
+const defaultListErrorMessage = "An unexpected error occurred while listing emails. Please try again later.";
+
 
 // Obtain the socket object
 // Automatically start a connection to window.location
@@ -42,14 +48,22 @@ function updateScroll(){
 	log_text_par.parentNode.scrollTop = log_text_par.parentNode.scrollHeight;
 }
 
+function clearAlert(){
+	let existing_alert = card_header.querySelector(".operation-alert");
+	if(existing_alert){
+		existing_alert.remove();
+	}
+}
+
 // Function used to show an error or warning alert
-function showAlert(type){
+function showAlert(type, message){
+	clearAlert();
 	let alert = document.createElement("div");
 	alert.setAttribute("role", "alert");
 	if(type === "error"){
-		alert.setAttribute("class", "alert alert-danger alert-dismissible");
+		alert.setAttribute("class", "operation-alert alert alert-danger alert-dismissible");
 	} else if (type === "warning") {
-		alert.setAttribute("class", "alert alert-warning alert-dismissible");
+		alert.setAttribute("class", "operation-alert alert alert-warning alert-dismissible");
 	}
 	alert.setAttribute("style", "text-align: left;margin-top: 15px;margin-bottom: 0px;");
 	let close = document.createElement("Button");
@@ -62,42 +76,64 @@ function showAlert(type){
 	close.setAttribute("aria-label", "Close");
 	alert.appendChild(close);
 	let span = document.createElement("span");
-	if(type === "error"){
-		span.innerHTML="<strong>An error has occurred.</strong>";
-	} else if (type === "warning") {
-		span.innerHTML="<strong>There are no e-mails to read.</strong>";
-	}
+	let strong = document.createElement("strong");
+	strong.textContent = message;
+	span.appendChild(strong);
 	alert.appendChild(span);
-	document.getElementById("cardHeader").appendChild(alert);
+	card_header.appendChild(alert);
+}
+
+function getResponseErrorMessage(xhr){
+	try {
+		let response = JSON.parse(xhr.responseText);
+		if(response && response.error && listErrorCodes.has(response.error.code) && typeof response.error.message === "string"){
+			return response.error.message;
+		}
+	} catch (error) {
+		// Non-JSON and malformed error responses use the safe fallback below.
+	}
+	return defaultListErrorMessage;
+}
+
+function handleListError(xhr){
+	showAlert("error", getResponseErrorMessage(xhr));
+	list_mails_btn.classList.remove("d-none");
+	progress_bar.classList.add("d-none");
+	progress_bar.firstElementChild.classList.remove("progress-bar-animated");
 }
 
 // Function called when the "List emails" button is clicked
 function list_emails(){
 	// Modify the DOM to show the progress bar
+	clearAlert();
 	data_table.tBodies[0].innerHTML="";
 	div_data_table.classList.add("d-none");
 	list_mails_btn.classList.add("d-none");
 	progress_bar.classList.remove("d-none");
+	progress_bar.firstElementChild.classList.remove("bg-danger");
+	progress_bar.firstElementChild.classList.add("bg-info");
 	progress_bar.firstElementChild.classList.add("progress-bar-animated");
 	progress_bar.firstElementChild.innerHTML = "<strong>Retrieving emails...</strong>";
-	// Prepare the AJAX GET request to the path /api/list
+	// Prepare the AJAX GET request to the email listing endpoint
 	let xhr = new XMLHttpRequest();
-	xhr.open('GET', '/api/list', true);
+	xhr.open('GET', '/api/list/emails', true);
 	// Function called when the response is available
 	xhr.onreadystatechange = function() {
 		if(xhr.readyState == 4) {
 			if(xhr.status == 200) {
-				let response = JSON.parse(xhr.responseText);
-				if (response == null){	  
-					// Handle errors during the execution	   
-					showAlert("error");
-					progress_bar.firstElementChild.classList.remove("bg-info");
-					progress_bar.firstElementChild.classList.add("bg-danger");
-					progress_bar.firstElementChild.classList.remove("progress-bar-animated");
-					progress_bar.firstElementChild.innerHTML="<strong>Error</strong>";
+				let response;
+				try {
+					response = JSON.parse(xhr.responseText);
+				} catch (error) {
+					handleListError(xhr);
+					return;
+				}
+				if(!Array.isArray(response)){
+					handleListError(xhr);
+					return;
 				} else if(response.length == 0){
 					// Handle empty list of emails
-					showAlert("warning");
+					showAlert("warning", "There are no emails to read.");
 					list_mails_btn.classList.remove("d-none");
 					progress_bar.classList.add("d-none");
 					progress_bar.firstElementChild.classList.remove("progress-bar-animated");
@@ -106,13 +142,13 @@ function list_emails(){
 					for(element of response){
 						let row = document.createElement("tr");
 						let td_uid = document.createElement("td"); 
-						td_uid.appendChild(document.createTextNode(element.mailUID));
+						td_uid.appendChild(document.createTextNode(element.uid));
 						row.appendChild(td_uid);
 						let td_date = document.createElement("td"); 
 						td_date.appendChild(document.createTextNode(element.date));
 						row.appendChild(td_date); 
 						let td_from = document.createElement("td"); 
-						td_from.appendChild(document.createTextNode(element.from));
+						td_from.appendChild(document.createTextNode(element.sender));
 						row.appendChild(td_from); 
 						let td_subject = document.createElement("td"); 
 						td_subject.appendChild(document.createTextNode(element.subject));
@@ -121,7 +157,7 @@ function list_emails(){
 						td_body.appendChild(document.createTextNode(element.body));  
 						row.appendChild(td_body); 
 						let td_attachment = document.createElement("td"); 
-						td_attachment.appendChild(document.createTextNode(element.attachedMail));
+						td_attachment.appendChild(document.createTextNode(element.attached_subject));
 						row.appendChild(td_attachment); 
 						let td_button = document.createElement("td"); 
 						td_button.setAttribute("class", "justify-content-xl-end");
@@ -145,12 +181,7 @@ function list_emails(){
 				}
 			}
 			else {
-				// Handle errors during the execution
-				showAlert("error");
-				progress_bar.firstElementChild.classList.remove("bg-info");
-				progress_bar.firstElementChild.classList.add("bg-danger");
-				progress_bar.firstElementChild.classList.remove("progress-bar-animated");
-				progress_bar.firstElementChild.innerHTML="<strong>Error</strong>";
+				handleListError(xhr);
 			}
 		}
 	}
