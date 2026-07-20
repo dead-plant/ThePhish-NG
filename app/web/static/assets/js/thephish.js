@@ -116,7 +116,7 @@ function list_emails(){
 	progress_bar.firstElementChild.innerHTML = "<strong>Retrieving emails...</strong>";
 	// Prepare the AJAX GET request to the email listing endpoint
 	let xhr = new XMLHttpRequest();
-	xhr.open('GET', '/api/list/emails', true);
+	xhr.open('GET', '/api/emails', true);
 	// Function called when the response is available
 	xhr.onreadystatechange = function() {
 		if(xhr.readyState == 4) {

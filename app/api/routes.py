@@ -38,7 +38,25 @@ def health():
     return jsonify(status="ok")
 
 
-@api_bp.route("/list", methods=["GET"])
-@api_bp.route("/list/emails", methods=["GET"])
+@api_bp.route("/emails", methods=["GET"])
 def list_emails():
     return jsonify(listing.list_emails())
+
+
+@api_bp.route("/analysis", methods=["POST"])
+def create_analysis():
+    # start analysis
+    ...
+
+"""
+@api_bp.route("/analysis", methods=["GET"])
+def list_analysis():
+    # list all open cases
+    ...
+
+
+@api_bp.route("/analysis/<case_id>", methods=["GET"])
+def get_analysis(case_id):
+    # get details of a analysis
+    ...
+"""
