@@ -3,7 +3,7 @@
 	"disable_existing_loggers": false,
 	"formatters": {
 		"formatter_console": {
-			"format": "[%(levelname)s]_[%(name)s]: %(message)s"
+			"format": "[%(levelname)s]_[%(processName)s]_[%(name)s]: %(message)s"
 		}
 	},
 	"handlers": {
