@@ -161,6 +161,7 @@ def _poll_jobs(records: list[_JobRecord], alogger: AnalysisLogger) -> None:
         return
     alogger.info(f"Waiting for {len(pending)} analyzer job(s) to complete...")
 
+    completed_jobs: dict[str, OutputAnalyzerJob] = {}
     deadline = time.monotonic() + JOB_TIMEOUT
     while pending and time.monotonic() < deadline:
         time.sleep(POLL_INTERVAL)
@@ -172,13 +173,45 @@ def _poll_jobs(records: list[_JobRecord], alogger: AnalysisLogger) -> None:
                 continue  # transient; bounded by the deadline
             if job.get("status") in _TERMINAL_JOB_STATUSES:
                 record.status = job["status"]
-                record.level = _resolve_level(job, record.observable.data_type) if job["status"] == "Success" else None
-                _log_job_result(record, alogger)
+                if job["status"] == "Success":
+                    completed_jobs[record.job_id] = job
+                else:
+                    record.level = None
+                    _log_job_result(record, alogger)
                 pending.remove(record)
 
     for record in pending:
         record.status = "timed_out"
         alogger.warning(f"Analyzer {record.analyzer_name} for {record.observable.data_type} {record.observable.name} did not finish in time")
+
+    _resolve_successful_levels(records, completed_jobs, alogger)
+
+
+def _resolve_successful_levels(
+    records: list[_JobRecord],
+    jobs: dict[str, OutputAnalyzerJob],
+    alogger: AnalysisLogger,
+) -> None:
+    """Resolve successful jobs from one refreshed report snapshot per observable."""
+    records_by_observable: dict[str, list[_JobRecord]] = {}
+    for record in records:
+        if record.status == "Success" and record.job_id is not None and record.job_id in jobs:
+            records_by_observable.setdefault(record.observable.observable_id, []).append(record)
+
+    for observable_id, observable_records in records_by_observable.items():
+        try:
+            reports = thehive.get_observable(observable_id).get("reports") or {}
+        except TheHiveApiError as exc:
+            log.warning("Could not retrieve analyzer reports for observable %s (%s)", observable_id, exc)
+            reports = {}
+        if not isinstance(reports, dict):
+            reports = {}
+
+        for record in observable_records:
+            job = jobs[record.job_id]
+            analyzer_name = job.get("analyzerName") or record.analyzer_name
+            record.level = _resolve_level(job, record.observable.data_type, reports.get(analyzer_name, {}))
+            _log_job_result(record, alogger)
 
 
 def _log_job_result(record: _JobRecord, alogger: AnalysisLogger) -> None:
@@ -199,22 +232,12 @@ def _as_dict(value: object) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def _extract_taxonomies(job_report: object) -> list[dict]:
-    """Extract the taxonomies from an analyzer job report.
-
-    TheHive versions differ in how the connector stores the Cortex report:
-    the report and its summary may be JSON-encoded strings, the taxonomies
-    may sit under summary.taxonomies or directly under taxonomies, and some
-    versions nest the whole Cortex response under another 'report' key.
-    """
-    report = _as_dict(job_report)
-    for container in (report, _as_dict(report.get("report"))):
-        taxonomies = _as_dict(container.get("summary")).get("taxonomies")
-        if not isinstance(taxonomies, list):
-            taxonomies = container.get("taxonomies")
-        if isinstance(taxonomies, list) and taxonomies:
-            return [taxonomy for taxonomy in taxonomies if isinstance(taxonomy, dict)]
-    return []
+def _extract_taxonomies(observable_report: object) -> list[dict]:
+    """Extract taxonomy dictionaries from a TheHive observable report."""
+    taxonomies = _as_dict(observable_report).get("taxonomies")
+    if not isinstance(taxonomies, list):
+        return []
+    return [taxonomy for taxonomy in taxonomies if isinstance(taxonomy, dict)]
 
 
 def _extract_full_report(job_report: object) -> dict:
@@ -227,17 +250,16 @@ def _extract_full_report(job_report: object) -> dict:
     return {}
 
 
-def _resolve_level(job: OutputAnalyzerJob, observable_type: str) -> str:
-    """Resolve the result level of a successful job from its report taxonomies,
-    applying the known analyzer quirks and the configured level mappings."""
+def _resolve_level(job: OutputAnalyzerJob, observable_type: str, observable_report: object) -> str:
+    """Resolve a successful job's level from its TheHive observable report."""
     analyzer_name = job.get("analyzerName", "")
-    taxonomies = _extract_taxonomies(job.get("report"))
+    taxonomies = _extract_taxonomies(observable_report)
 
     level = "info"
     if not taxonomies:
         log.debug(
-            "Analyzer job %s (%s) has no taxonomies in its report (keys: %s); defaulting to info",
-            job.get("_id"), analyzer_name, sorted(_as_dict(job.get("report")).keys()),
+            "Analyzer job %s (%s) has no taxonomies in its observable report (keys: %s); defaulting to info",
+            job.get("_id"), analyzer_name, sorted(_as_dict(observable_report).keys()),
         )
     if taxonomies:
         if analyzer_name in _LAST_TAXONOMY_ANALYZERS:

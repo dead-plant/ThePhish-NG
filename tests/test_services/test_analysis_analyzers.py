@@ -27,16 +27,29 @@ def analyzer(name):
 class TheHiveStub:
     """Replace the thehive repository functions used by the analyzer stage."""
 
-    def __init__(self, monkeypatch, observables, catalog, *, levels=None, bulk_error=None, fail_single=(), job_statuses=None):
+    def __init__(
+        self,
+        monkeypatch,
+        observables,
+        catalog,
+        *,
+        levels=None,
+        job_reports=None,
+        bulk_error=None,
+        fail_single=(),
+        job_statuses=None,
+    ):
         self.observables = observables
         self.catalog = catalog
         self.levels = levels or {}  # analyzer name -> taxonomy level
+        self.job_reports = job_reports or {}
         self.bulk_error = bulk_error
         self.fail_single = set(fail_single)
         self.job_statuses = job_statuses or {}  # analyzer name -> job status
         self.jobs = {}  # job id -> (analyzer name, artifact id)
         self.bulk_calls = []
         self.single_calls = []
+        self.observable_gets = []
         self.ioc_updates = []
         self._counter = 0
 
@@ -47,6 +60,7 @@ class TheHiveStub:
         monkeypatch.setattr(thehive, "bulk_create_analyzer_jobs", self._bulk)
         monkeypatch.setattr(thehive, "create_analyzer_job", self._single)
         monkeypatch.setattr(thehive, "get_analyzer_job", self._get_job)
+        monkeypatch.setattr(thehive, "get_observable", self._get_observable)
         monkeypatch.setattr(thehive, "bulk_update_observables", lambda ids, *, ioc: self.ioc_updates.append((ids, ioc)))
         monkeypatch.setattr(time, "sleep", lambda seconds: None)
 
@@ -74,8 +88,18 @@ class TheHiveStub:
         status = self.job_statuses.get(analyzer_name, "Success")
         job = {"_id": job_id, "status": status, "analyzerName": analyzer_name}
         if status == "Success":
-            job["report"] = {"summary": {"taxonomies": [{"level": self.levels.get(analyzer_name, "info")}]}}
+            job["report"] = self.job_reports.get(analyzer_name, {"artifacts": [], "full": {}, "success": True})
         return job
+
+    def _get_observable(self, observable_id):
+        self.observable_gets.append(observable_id)
+        original = next(item for item in self.observables if item["_id"] == observable_id)
+        reports = {
+            analyzer_name: {"taxonomies": [{"level": self.levels.get(analyzer_name, "info")}]}
+            for analyzer_name, artifact_id in self.jobs.values()
+            if artifact_id == observable_id and self.job_statuses.get(analyzer_name, "Success") == "Success"
+        }
+        return {**original, "reports": reports}
 
     def started_pairs(self):
         return sorted(self.jobs.values())
@@ -142,6 +166,19 @@ class TestJobHandling:
         assert stub.single_calls == []
         assert len(stub.jobs) == 2
 
+    def test_successful_jobs_refresh_an_observable_once(self, monkeypatch, alogger):
+        stub = TheHiveStub(
+            monkeypatch,
+            [observable("d1", "domain", data="odd.test")],
+            {"domain": [analyzer("First_1_0"), analyzer("Second_1_0")]},
+            levels={"First_1_0": "suspicious", "Second_1_0": "info"},
+        )
+
+        outcome = analyzers.run_analyzers(BUILT, alogger)
+
+        assert outcome.verdict == "Suspicious"
+        assert stub.observable_gets == ["d1"]
+
     def test_fallback_to_individual_jobs(self, monkeypatch, alogger):
         stub = TheHiveStub(
             monkeypatch,
@@ -194,6 +231,20 @@ class TestVerdict:
         assert stub.ioc_updates == [(["d1"], True)]
         assert "Malicious: MalwareFinder_1_0 on domain evil.test" in outcome.summary_lines
 
+    def test_job_without_taxonomies_uses_observable_report(self, monkeypatch, alogger):
+        stub = TheHiveStub(
+            monkeypatch,
+            [observable("d1", "domain", data="evil.test")],
+            {"domain": [analyzer("MalwareFinder_1_0")]},
+            levels={"MalwareFinder_1_0": "malicious"},
+            job_reports={"MalwareFinder_1_0": {"artifacts": [], "full": {}, "success": True}},
+        )
+
+        outcome = analyzers.run_analyzers(BUILT, alogger)
+
+        assert outcome.verdict == "Malicious"
+        assert stub.ioc_updates == [(["d1"], True)]
+
     def test_suspicious_report_gives_suspicious_verdict(self, monkeypatch, alogger):
         stub = TheHiveStub(
             monkeypatch,
@@ -224,50 +275,38 @@ class TestLevelResolution:
         monkeypatch.setattr(analyzers.analyzer_level_mappings, "map_level", lambda name, obs_type, level: level)
 
     def test_default_uses_first_taxonomy(self):
-        job = {"analyzerName": "SomeAnalyzer_1_0", "report": {"summary": {"taxonomies": [{"level": "suspicious"}, {"level": "malicious"}]}}}
-        assert analyzers._resolve_level(job, "domain") == "suspicious"
+        job = {"analyzerName": "SomeAnalyzer_1_0", "report": {}}
+        report = {"taxonomies": [{"level": "suspicious"}, {"level": "malicious"}]}
+        assert analyzers._resolve_level(job, "domain", report) == "suspicious"
 
     def test_last_taxonomy_analyzers(self):
-        job = {"analyzerName": "Pulsedive_GetIndicator_1_0", "report": {"summary": {"taxonomies": [{"level": "info"}, {"level": "malicious"}]}}}
-        assert analyzers._resolve_level(job, "domain") == "malicious"
+        job = {"analyzerName": "Pulsedive_GetIndicator_1_0", "report": {}}
+        report = {"taxonomies": [{"level": "info"}, {"level": "malicious"}]}
+        assert analyzers._resolve_level(job, "domain", report) == "malicious"
 
     def test_spamhaus_return_codes(self):
-        job = {"analyzerName": "SpamhausDBL_1_0", "report": {"summary": {"taxonomies": [{"value": "127.0.1.2"}]}}}
-        assert analyzers._resolve_level(job, "domain") == "malicious"
-        job = {"analyzerName": "SpamhausDBL_1_0", "report": {"summary": {"taxonomies": [{"value": "NXDOMAIN"}]}}}
-        assert analyzers._resolve_level(job, "domain") == "info"
+        job = {"analyzerName": "SpamhausDBL_1_0", "report": {}}
+        assert analyzers._resolve_level(job, "domain", {"taxonomies": [{"value": "127.0.1.2"}]}) == "malicious"
+        assert analyzers._resolve_level(job, "domain", {"taxonomies": [{"value": "NXDOMAIN"}]}) == "info"
 
     def test_urlhaus_threat_in_full_report(self):
-        job = {"analyzerName": "URLhaus_2_0", "report": {"summary": {"taxonomies": [{"level": "info"}]}, "full": {"query_status": "ok", "threat": "malware_download"}}}
-        assert analyzers._resolve_level(job, "url") == "malicious"
+        job = {"analyzerName": "URLhaus_2_0", "report": {"full": {"query_status": "ok", "threat": "malware_download"}}}
+        assert analyzers._resolve_level(job, "url", {"taxonomies": [{"level": "info"}]}) == "malicious"
 
     def test_missing_taxonomies_default_to_info(self):
         job = {"analyzerName": "SomeAnalyzer_1_0", "report": {}}
-        assert analyzers._resolve_level(job, "domain") == "info"
-
-    # TheHive versions store the Cortex report in different shapes; none of
-    # them may silently degrade a real level to "info".
-    @pytest.mark.parametrize("report", [
-        {"summary": {"taxonomies": [{"level": "malicious"}]}},                      # raw Cortex shape
-        {"summary": '{"taxonomies": [{"level": "malicious"}]}'},                    # summary as JSON string
-        '{"summary": {"taxonomies": [{"level": "malicious"}]}}',                    # whole report as JSON string
-        {"taxonomies": [{"level": "malicious"}]},                                   # taxonomies at the top level
-        {"report": {"summary": {"taxonomies": [{"level": "malicious"}]}}},          # nested Cortex response
-    ])
-    def test_report_shape_variants(self, report):
-        job = {"analyzerName": "SomeAnalyzer_1_0", "report": report}
-        assert analyzers._resolve_level(job, "domain") == "malicious"
+        assert analyzers._resolve_level(job, "domain", {}) == "info"
 
     def test_urlhaus_full_report_shape_variants(self):
         for report in (
-            {"summary": {"taxonomies": [{"level": "info"}]}, "full": {"query_status": "ok", "threat": "malware_download"}},
-            {"report": {"summary": {"taxonomies": [{"level": "info"}]}, "full": {"query_status": "ok", "threat": "malware_download"}}},
+            {"full": {"query_status": "ok", "threat": "malware_download"}},
+            {"report": {"full": {"query_status": "ok", "threat": "malware_download"}}},
         ):
             job = {"analyzerName": "URLhaus_2_0", "report": report}
-            assert analyzers._resolve_level(job, "url") == "malicious"
+            assert analyzers._resolve_level(job, "url", {"taxonomies": [{"level": "info"}]}) == "malicious"
 
 
 def test_configured_level_mapping_is_applied():
     # config-example maps malicious -> suspicious for this analyzer on domains
-    job = {"analyzerName": "DomainMailSPFDMARC_Analyzer_1_2", "report": {"summary": {"taxonomies": [{"level": "malicious"}]}}}
-    assert analyzers._resolve_level(job, "domain") == "suspicious"
+    job = {"analyzerName": "DomainMailSPFDMARC_Analyzer_1_2", "report": {}}
+    assert analyzers._resolve_level(job, "domain", {"taxonomies": [{"level": "malicious"}]}) == "suspicious"
