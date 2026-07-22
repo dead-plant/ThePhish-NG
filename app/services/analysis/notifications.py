@@ -22,8 +22,7 @@ from app.services.analysis.tracking import AnalysisLogger
 
 log = logging.getLogger(__name__)
 
-# Placeholder link included at the top of every result email; the frontend
-# route behind it will be implemented with the new frontend.
+# template of link included at the top of every result email, should link to the web view of the analysis
 RESULT_LINK_TEMPLATE: Final = "https://thephish.example.com/analysis/{analysis_id}"
 
 _PHISHMAILER_PREFIX: Final = "PhishMailer"
@@ -83,12 +82,14 @@ def _build_description(responder_name: str, recipient: str, subject: str, body: 
 def _wait_for_responder(task_id: str) -> bool:
     """Poll the responder action on a task until it finishes or times out."""
     deadline = time.monotonic() + RESPONDER_TIMEOUT
-    while time.monotonic() < deadline:
+    errors = 0
+    while time.monotonic() < deadline and errors < 5:
         time.sleep(RESPONDER_POLL_INTERVAL)
         try:
             action = thehive.get_responder_action("Task", task_id)
         except TheHiveApiError as exc:
             log.debug("Polling responder action on task %s failed (%s)", task_id, exc)
+            errors += 1
             continue
         if action.get("status") in _TERMINAL_ACTION_STATUSES:
             return action["status"] == "Success"

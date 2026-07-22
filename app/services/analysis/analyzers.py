@@ -163,13 +163,15 @@ def _poll_jobs(records: list[_JobRecord], alogger: AnalysisLogger) -> None:
 
     completed_jobs: dict[str, OutputAnalyzerJob] = {}
     deadline = time.monotonic() + JOB_TIMEOUT
-    while pending and time.monotonic() < deadline:
+    errors = 0
+    while pending and time.monotonic() < deadline and errors < 5:
         time.sleep(POLL_INTERVAL)
         for record in pending[:]:
             try:
                 job = thehive.get_analyzer_job(record.job_id)
             except TheHiveApiError as exc:
                 log.debug("Polling analyzer job %s failed (%s)", record.job_id, exc)
+                errors += 1
                 continue  # transient; bounded by the deadline
             if job.get("status") in _TERMINAL_JOB_STATUSES:
                 record.status = job["status"]
