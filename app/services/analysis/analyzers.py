@@ -5,6 +5,7 @@ with an individual-job fallback for older TheHive versions), polls them until
 completion or timeout, resolves the result levels and derives the verdict.
 """
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -188,14 +189,56 @@ def _log_job_result(record: _JobRecord, alogger: AnalysisLogger) -> None:
         alogger.warning(f"Analyzer {subject} failed")
 
 
+def _as_dict(value: object) -> dict:
+    """Return the value as a dict, decoding JSON strings; {} for anything else."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _extract_taxonomies(job_report: object) -> list[dict]:
+    """Extract the taxonomies from an analyzer job report.
+
+    TheHive versions differ in how the connector stores the Cortex report:
+    the report and its summary may be JSON-encoded strings, the taxonomies
+    may sit under summary.taxonomies or directly under taxonomies, and some
+    versions nest the whole Cortex response under another 'report' key.
+    """
+    report = _as_dict(job_report)
+    for container in (report, _as_dict(report.get("report"))):
+        taxonomies = _as_dict(container.get("summary")).get("taxonomies")
+        if not isinstance(taxonomies, list):
+            taxonomies = container.get("taxonomies")
+        if isinstance(taxonomies, list) and taxonomies:
+            return [taxonomy for taxonomy in taxonomies if isinstance(taxonomy, dict)]
+    return []
+
+
+def _extract_full_report(job_report: object) -> dict:
+    """Extract the full report section, tolerating the same shape variants."""
+    report = _as_dict(job_report)
+    for container in (report, _as_dict(report.get("report"))):
+        full = _as_dict(container.get("full"))
+        if full:
+            return full
+    return {}
+
+
 def _resolve_level(job: OutputAnalyzerJob, observable_type: str) -> str:
     """Resolve the result level of a successful job from its report taxonomies,
     applying the known analyzer quirks and the configured level mappings."""
     analyzer_name = job.get("analyzerName", "")
-    report = job.get("report") or {}
-    taxonomies = (report.get("summary") or {}).get("taxonomies") or []
+    taxonomies = _extract_taxonomies(job.get("report"))
 
     level = "info"
+    if not taxonomies:
+        log.debug(
+            "Analyzer job %s (%s) has no taxonomies in its report (keys: %s); defaulting to info",
+            job.get("_id"), analyzer_name, sorted(_as_dict(job.get("report")).keys()),
+        )
     if taxonomies:
         if analyzer_name in _LAST_TAXONOMY_ANALYZERS:
             # these analyzers append the relevant taxonomy last
@@ -209,7 +252,7 @@ def _resolve_level(job: OutputAnalyzerJob, observable_type: str) -> str:
 
     # URLhaus reports a threat only in the full report for URLs and hosts
     if analyzer_name == "URLhaus_2_0":
-        full = report.get("full") or {}
+        full = _extract_full_report(job.get("report"))
         if full.get("query_status") == "ok" and full.get("threat"):
             level = "malicious"
 

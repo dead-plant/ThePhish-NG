@@ -245,6 +245,27 @@ class TestLevelResolution:
         job = {"analyzerName": "SomeAnalyzer_1_0", "report": {}}
         assert analyzers._resolve_level(job, "domain") == "info"
 
+    # TheHive versions store the Cortex report in different shapes; none of
+    # them may silently degrade a real level to "info".
+    @pytest.mark.parametrize("report", [
+        {"summary": {"taxonomies": [{"level": "malicious"}]}},                      # raw Cortex shape
+        {"summary": '{"taxonomies": [{"level": "malicious"}]}'},                    # summary as JSON string
+        '{"summary": {"taxonomies": [{"level": "malicious"}]}}',                    # whole report as JSON string
+        {"taxonomies": [{"level": "malicious"}]},                                   # taxonomies at the top level
+        {"report": {"summary": {"taxonomies": [{"level": "malicious"}]}}},          # nested Cortex response
+    ])
+    def test_report_shape_variants(self, report):
+        job = {"analyzerName": "SomeAnalyzer_1_0", "report": report}
+        assert analyzers._resolve_level(job, "domain") == "malicious"
+
+    def test_urlhaus_full_report_shape_variants(self):
+        for report in (
+            {"summary": {"taxonomies": [{"level": "info"}]}, "full": {"query_status": "ok", "threat": "malware_download"}},
+            {"report": {"summary": {"taxonomies": [{"level": "info"}]}, "full": {"query_status": "ok", "threat": "malware_download"}}},
+        ):
+            job = {"analyzerName": "URLhaus_2_0", "report": report}
+            assert analyzers._resolve_level(job, "url") == "malicious"
+
 
 def test_configured_level_mapping_is_applied():
     # config-example maps malicious -> suspicious for this analyzer on domains
