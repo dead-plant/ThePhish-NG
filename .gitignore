@@ -3,6 +3,7 @@ nogit.*
 config/
 __pycache__/
 .coverage
+.worktrees/
 .pytest*
 pytest-cache*
 /docs/superpowers/
