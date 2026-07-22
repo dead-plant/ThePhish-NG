@@ -217,7 +217,7 @@ def extract_observables(eml: bytes | str | email.message.Message) -> dict[str, l
     for obs_type in observables:
         observables[obs_type] = list(dict.fromkeys(observables[obs_type]))
 
-    log.info(
+    log.debug(
         "Extracted observables: %s",
         {obs_type: len(values) for obs_type, values in observables.items()},
     )
@@ -252,5 +252,5 @@ def extract_attachments(eml: bytes | str | email.message.Message) -> list[tuple[
                 attachments.append((filename, payload))
                 log.debug("Extracted attachment %r (%d bytes)", filename, len(payload))
 
-    log.info("Extracted %d attachment(s)", len(attachments))
+    log.debug("Extracted %d attachment(s)", len(attachments))
     return attachments
