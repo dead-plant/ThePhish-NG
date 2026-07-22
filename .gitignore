@@ -5,6 +5,7 @@ __pycache__/
 .coverage
 .pytest*
 pytest-cache*
+/docs/superpowers/
 
 HELP.md
 target/
