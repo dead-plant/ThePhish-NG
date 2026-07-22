@@ -11,6 +11,7 @@ import time
 from typing import Final, Optional
 
 import ioc_fanger
+from email_validator import EmailNotValidError, validate_email
 from thehive4py.types.cortex import OutputResponder
 
 from app.repositories import thehive
@@ -33,20 +34,17 @@ RESPONDER_TIMEOUT: Final[float] = 180.0  # seconds before a responder run is giv
 
 _TERMINAL_ACTION_STATUSES: Final = ("Success", "Failure")
 
-# Conservative recipient pattern: no whitespace, quotes, semicolons or angle
-# brackets, so an address can never corrupt a responder directive.
-_RECIPIENT_PATTERN: Final = re.compile(r"^[^@\s;\"'<>,]+@[^@\s;\"'<>,]+\.[A-Za-z0-9-]{2,}$")
 _MAX_SUBJECT_LENGTH: Final = 120  # PhishMailer rejects longer subjects
 
 
 def _validate_recipient(address: str) -> Optional[str]:
-    """Return the normalized recipient address, or None if it is unsafe."""
+    """Return the normalized recipient address, or None if it is invalid."""
     if not isinstance(address, str):
         return None
-    address = address.strip()
-    if len(address) > 254 or not _RECIPIENT_PATTERN.fullmatch(address):
+    try:
+        return validate_email(address.strip(), check_deliverability=False).normalized
+    except EmailNotValidError:
         return None
-    return address
 
 
 def _sanitize_subject(subject: str) -> str:

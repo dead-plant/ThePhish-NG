@@ -40,3 +40,4 @@ zope.event==6.2
 zope.interface==8.5
 imapclient==3.1.0
 truststore==0.10.4
+email-validator==2.3.0

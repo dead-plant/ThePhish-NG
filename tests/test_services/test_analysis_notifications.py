@@ -78,6 +78,14 @@ class TestResponderSelection:
 
 
 class TestInputSafety:
+    def test_recipient_is_normalized_without_deliverability_check(self, monkeypatch, alogger):
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+
+        notifications.send_analysis_started(BUILT, "User@NONEXISTENT-DOMAIN-7F9CC67.COM", alogger)
+
+        directive = stub.task_updates[0][1]["description"].splitlines()[0]
+        assert "mailto:User@nonexistent-domain-7f9cc67.com;" in directive
+
     @pytest.mark.parametrize("recipient", [
         "with space@example.com",
         'quote"y@example.com',
