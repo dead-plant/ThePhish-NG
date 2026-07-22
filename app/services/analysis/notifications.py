@@ -83,7 +83,7 @@ def _wait_for_responder(task_id: str) -> bool:
     """Poll the responder action on a task until it finishes or times out."""
     deadline = time.monotonic() + RESPONDER_TIMEOUT
     errors = 0
-    while time.monotonic() < deadline and errors < 5:
+    while time.monotonic() < deadline and errors < 3:
         time.sleep(RESPONDER_POLL_INTERVAL)
         try:
             action = thehive.get_responder_action("Task", task_id)

@@ -164,7 +164,7 @@ def _poll_jobs(records: list[_JobRecord], alogger: AnalysisLogger) -> None:
     completed_jobs: dict[str, OutputAnalyzerJob] = {}
     deadline = time.monotonic() + JOB_TIMEOUT
     errors = 0
-    while pending and time.monotonic() < deadline and errors < 5:
+    while pending and time.monotonic() < deadline and errors < 3:
         time.sleep(POLL_INTERVAL)
         for record in pending[:]:
             try:
