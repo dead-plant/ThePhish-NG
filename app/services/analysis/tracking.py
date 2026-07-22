@@ -12,6 +12,7 @@ import time
 from datetime import datetime, timezone
 from typing import Iterator, Optional
 
+import ioc_fanger
 import redis
 
 from app import config
@@ -211,6 +212,9 @@ class AnalysisLogger:
 
     Entries are persisted in Redis and mirrored in memory, so the complete log
     stays available for the result email even if individual Redis writes fail.
+
+    Messages are defanged (hXXp://, [.]) so no URL, domain or address from the
+    analyzed email ever appears clickable in the log or in the result email.
     """
 
     def __init__(self, analysis_id: str) -> None:
@@ -218,6 +222,7 @@ class AnalysisLogger:
         self.entries: list[dict] = []
 
     def _append(self, level: str, message: str) -> None:
+        message = ioc_fanger.defang(message)
         entry = {"timestamp": utc_now_iso(), "level": level, "message": message}
         try:
             entry = append_log_entry(self.analysis_id, level, message)

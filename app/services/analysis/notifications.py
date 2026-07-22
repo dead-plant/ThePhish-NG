@@ -10,6 +10,7 @@ import re
 import time
 from typing import Final, Optional
 
+import ioc_fanger
 from thehive4py.types.cortex import OutputResponder
 
 from app.repositories import thehive
@@ -49,7 +50,12 @@ def _validate_recipient(address: str) -> Optional[str]:
 
 
 def _sanitize_subject(subject: str) -> str:
-    """Make a subject safe for a quoted PhishMailer directive field."""
+    """Make a subject safe for a quoted PhishMailer directive field.
+
+    Defanged as well, so a URL in the analyzed email's subject never becomes
+    clickable in the notification.
+    """
+    subject = ioc_fanger.defang(subject)
     subject = re.sub(r"[\x00-\x1f\x7f\"]", " ", subject)
     subject = re.sub(r"\s+", " ", subject).strip()
     if len(subject) > _MAX_SUBJECT_LENGTH:
@@ -126,7 +132,7 @@ def send_analysis_started(built: BuiltCase, recipient: str, alogger: AnalysisLog
         task_id=built.task_ids.get(NOTIFICATION_TASK),
         recipient=recipient,
         subject=f"ThePhish: your reported email [{title}] is being analyzed",
-        body=f"Thanks for the submission. Your e-mail with subject [{title}] is being analyzed.",
+        body=ioc_fanger.defang(f"Thanks for the submission. Your e-mail with subject [{title}] is being analyzed."),
         mail_label="notification email",
         alogger=alogger,
     )
@@ -140,7 +146,9 @@ def send_analysis_result(built: BuiltCase, recipient: str, analysis_id: str, out
     """Send the final result email with the verdict, summary and complete log.
 
     The log lines are taken from the logger's in-memory entries, so the email
-    stays complete even if individual Redis log writes failed.
+    stays complete even if individual Redis log writes failed. All content
+    derived from the analyzed email is defanged; the analysis link at the top
+    is the only clickable URL in the email.
     """
     title = built.case["title"].removeprefix(CASE_TITLE_PREFIX)
     body_lines = [
@@ -148,13 +156,13 @@ def send_analysis_result(built: BuiltCase, recipient: str, analysis_id: str, out
         "",
         f"Final verdict: {outcome.verdict}",
         "",
-        f"Thanks for your submission. The e-mail with subject [{title}] has been classified as {outcome.verdict}.",
+        ioc_fanger.defang(f"Thanks for your submission. The e-mail with subject [{title}] has been classified as {outcome.verdict}."),
         "",
         "--- Analyzer summary ---",
-        *outcome.summary_lines,
+        *(ioc_fanger.defang(line) for line in outcome.summary_lines),
         "",
         "--- Analysis log ---",
-        *_format_log_lines(alogger.entries),
+        *_format_log_lines(alogger.entries),  # logger entries are already defanged
     ]
     _send_task_mail(
         task_id=built.task_ids.get(RESULT_TASK),

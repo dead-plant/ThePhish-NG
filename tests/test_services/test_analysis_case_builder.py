@@ -111,7 +111,8 @@ class TestFilteringAndUrls:
         monkeypatch.setattr(case_builder.redirect_tracker, "get_trace", get_trace)
         groups = case_builder._collect_urls(["http://short.test/a", "http://broken.test/b"], alogger)
         assert groups["redirect_target"] == ["http://landing.test/final"]
-        assert any("Could not follow redirects of http://broken.test/b" in entry["message"] for entry in alogger.entries)
+        # the log entry exists, defanged so the broken URL is not clickable
+        assert any("Could not follow redirects of hXXp://broken[.]test/b" in entry["message"] for entry in alogger.entries)
 
 
 class TestBuildCase:
@@ -161,7 +162,7 @@ class TestBuildCase:
 
         file_names = {name for name, _ in stub.files}
         assert "invoice.pdf" not in file_names
-        assert any("Skipped whitelisted attachment: invoice.pdf" == entry["message"] for entry in alogger.entries)
+        assert any(entry["message"].startswith("Skipped whitelisted attachment: invoice") for entry in alogger.entries)
 
 
 class TestFinalizeCase:

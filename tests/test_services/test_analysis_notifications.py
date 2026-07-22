@@ -102,6 +102,11 @@ class TestInputSafety:
         assert not re.search(r"[\x00-\x1f\x7f]", subject)
         assert len(subject) <= 120
 
+    def test_subject_urls_are_defanged(self):
+        subject = notifications._sanitize_subject("ThePhish verdict: Malicious [visit http://evil.example.com now]")
+        assert "http://evil.example.com" not in subject
+        assert "hXXp://evil[.]example[.]com" in subject
+
     def test_directive_stays_intact_with_hostile_case_title(self, monkeypatch, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
         built = BuiltCase(case={"_id": "c", "number": 2, "title": '[ThePhish] evil"; mailto:attacker@evil.test;'}, task_ids=BUILT.task_ids)
@@ -126,11 +131,26 @@ class TestResultEmail:
         assert lines[1] == "https://thephish.example.com/analysis/aid123"
         assert "Final verdict: Malicious" in lines
         assert "Analyzer reports: 3 collected, 1 failed" in lines
-        assert "Malicious: X on domain evil.test" in lines
+        assert "Malicious: X on domain evil[.]test" in lines  # summary lines are defanged
         assert any("step one" in line for line in lines)
         assert any("step two" in line for line in lines)
         assert stub.actions[0]["object_id"] == "task-result"
         assert stub.task_updates[-1] == ("task-result", {"status": "Completed"})
+
+    def test_result_email_contains_no_clickable_iocs(self, monkeypatch, alogger):
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+        alogger.info("Found observable url: http://evil.example.com/login")
+        outcome = AnalysisOutcome(verdict="Malicious", summary_lines=["Malicious: URLhaus_2_0 on url http://bad.example.org/x"])
+
+        notifications.send_analysis_result(BUILT, "user@example.com", "aid123", outcome, alogger)
+
+        body = stub.task_updates[0][1]["description"]
+        # the analysis link at the top is the only clickable URL in the email
+        assert "http://evil.example.com" not in body
+        assert "http://bad.example.org" not in body
+        assert "hXXp://evil[.]example[.]com/login" in body
+        assert "hXXp://bad[.]example[.]org/x" in body
+        assert body.count("https://") == 1  # only https://thephish.example.com/analysis/aid123
 
     def test_result_email_keeps_log_entries_that_missed_redis(self, monkeypatch, alogger, fake_redis):
         stub = ResponderStub(monkeypatch, [MAILER])

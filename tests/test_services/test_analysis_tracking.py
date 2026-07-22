@@ -101,6 +101,14 @@ class TestLog:
         log_keys = [key for key in fake_redis.expirations if key.endswith(":log")]
         assert log_keys and fake_redis.expirations[log_keys[0]] == RETENTION_SECONDS
 
+    def test_logger_defangs_iocs(self, fake_redis):
+        tracking.create_analysis(ANALYSIS_ID, 42)
+        logger = tracking.AnalysisLogger(ANALYSIS_ID)
+        logger.info("Found observable url: http://evil.example.com/login")
+        stored = tracking.get_analysis_log(ANALYSIS_ID)[0]["message"]
+        assert stored == "Found observable url: hXXp://evil[.]example[.]com/login"
+        assert logger.entries[0]["message"] == stored  # in-memory copy matches
+
     def test_logger_keeps_entries_in_memory_on_redis_failure(self, fake_redis):
         tracking.create_analysis(ANALYSIS_ID, 42)
         logger = tracking.AnalysisLogger(ANALYSIS_ID)
