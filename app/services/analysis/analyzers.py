@@ -34,6 +34,7 @@ _SPF_DMARC_ANALYZER_PREFIX: Final = "DomainMailSPFDMARC"
 
 POLL_INTERVAL: Final[float] = 5.0  # seconds between job status polls
 JOB_TIMEOUT: Final[float] = 900.0  # seconds before pending jobs are given up
+POLL_MAX_ERRORS: Final[int] = 3 # max thehive api errors until job is canceled
 
 _TERMINAL_JOB_STATUSES: Final = ("Success", "Failure")
 
@@ -205,10 +206,13 @@ class AnalyzerRunner:
         """Apply the selection rules and build the list of jobs to start."""
         blacklist = tuple(config.get_app_config()["analysis"].get("analyzer_prefix_blacklist", []))
         skipped_blacklisted: set[str] = set()
+        cortex_id = config.get_app_config()["thehive"]["cortex_id"]
 
         records = []
         for info in infos:
             for analyzer in catalog.get(info.data_type, []):
+                if cortex_id not in analyzer.get("cortexIds", []):
+                    continue
                 name = analyzer["name"]
                 if blacklist and name.startswith(blacklist):
                     skipped_blacklisted.add(name)
@@ -235,6 +239,8 @@ class AnalyzerRunner:
         cortex_id = config.get_app_config()["thehive"]["cortex_id"]
         jobs = [{"artifact_id": record.observable.observable_id, "analyzer_id": record.analyzer_id} for record in records]
 
+        # TODO: Bulk creation of analyzer jobs
+        """
         try:
             created = thehive.bulk_create_analyzer_jobs(cortex_id, jobs)
             if len(created) != len(records):
@@ -244,8 +250,9 @@ class AnalyzerRunner:
             self._events.info(f"Started {len(records)} analyzer job(s)")
             return
         except (TheHiveApiError, ValueError) as exc:
-            log.info("Bulk analyzer job creation failed, falling back to individual jobs (%s)", exc)
+            log.info("Bulk analyzer job creation is unavailable, falling back to individual jobs (%s)", exc)
             self._events.info("Bulk analyzer job creation is unavailable; starting jobs individually")
+        """
 
         for record, job_input in zip(records, jobs):
             try:
@@ -264,16 +271,17 @@ class AnalyzerRunner:
 
         completed_jobs: dict[str, OutputAnalyzerJob] = {}
         deadline = time.monotonic() + JOB_TIMEOUT
-        errors = 0
-        while pending and time.monotonic() < deadline and errors < 3:
+        api_errors = 0
+        while pending and time.monotonic() < deadline and api_errors < POLL_MAX_ERRORS:
             time.sleep(POLL_INTERVAL)
+            any_success = False
             for record in pending[:]:
                 try:
                     job = thehive.get_analyzer_job(record.job_id)
                 except TheHiveApiError as exc:
                     log.debug("Polling analyzer job %s failed (%s)", record.job_id, exc)
-                    errors += 1
                     continue  # transient; bounded by the deadline
+                any_success = True
                 if job.get("status") in _TERMINAL_JOB_STATUSES:
                     record.status = job["status"]
                     if job["status"] == "Success":
@@ -282,10 +290,15 @@ class AnalyzerRunner:
                         record.level = None
                         self._log_job_result(record)
                     pending.remove(record)
+            api_errors = 0 if any_success else api_errors + 1
 
         for record in pending:
-            record.status = "timed_out"
-            self._events.warning(f"Analyzer {record.analyzer_name} for {record.observable.data_type} {record.observable.name} did not finish in time")
+            if api_errors > POLL_MAX_ERRORS:
+                record.status = "timed_out"
+                self._events.warning(f"Could not determine status of {record.analyzer_name} for {record.observable.data_type} {record.observable.name}: TheHive API unreachable")
+            else:
+                record.status = "timed_out"
+                self._events.warning(f"Analyzer {record.analyzer_name} for {record.observable.data_type} {record.observable.name} did not finish in time")
 
         self._resolve_successful_levels(records, completed_jobs)
 

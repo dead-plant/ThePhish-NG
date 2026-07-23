@@ -299,8 +299,6 @@ def create_observable(*, case_id: str, data_type: str, data: list[str], ioc: boo
     _require_str(case_id=case_id, data_type=data_type)
     if not isinstance(data, list) or not data or not all(isinstance(entry, str) and entry.strip() for entry in data):
         raise ValueError("data must be a non-empty list of non-empty strings")
-    if any("\n" in entry for entry in data):
-        raise ValueError("data entries must be single line values")
     if not isinstance(ioc, bool):
         raise ValueError("ioc must be a boolean")
     if tags is not None and (not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags)):

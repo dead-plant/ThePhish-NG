@@ -100,7 +100,9 @@ class CaseBuilder:
             AnalysisError: If the case (or its template) cannot be created.
         """
         observables = observable_extractor.extract_observables(internal_msg)
-        subject = observables["mail-subject"][0] if observables["mail-subject"] else ""
+        raw_subject = observables["mail-subject"][0] if observables["mail-subject"] else ""
+        subject = re.sub(r"(?:[ \t]*[\r\n]+)+[ \t]*", " ", raw_subject).strip()
+
         self._events.info(f"Analyzing attached email with subject: {subject!r}")
 
         try:
@@ -191,7 +193,7 @@ class CaseBuilder:
         kept = []
         for value in values:
             value = value.strip()
-            if not value or "\n" in value or "\r" in value:
+            if not value:
                 continue
             if obs_type in _WHITELISTED_TYPES and whitelist.is_whitelisted(obs_type, value):
                 self._events.info(f"Skipped whitelisted {obs_type}: {value}")

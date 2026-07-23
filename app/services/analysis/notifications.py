@@ -14,6 +14,7 @@ import ioc_fanger
 from email_validator import EmailNotValidError, validate_email
 from thehive4py.types.cortex import OutputResponder
 
+from app import config
 from app.repositories import thehive
 from app.repositories.thehive import TheHiveApiError
 from app.services.analysis.analyzers import AnalysisOutcome
@@ -23,13 +24,14 @@ from app.services.analysis.events import EventSink
 log = logging.getLogger(__name__)
 
 # template of link included at the top of every result email, should link to the web view of the analysis
-RESULT_LINK_TEMPLATE: Final = "https://thephish.example.com/analysis/{analysis_id}"
+RESULT_LINK_TEMPLATE: Final = "{base_url}/analysis/{analysis_id}"
 
 _PHISHMAILER_PREFIX: Final = "PhishMailer"
 _MAILER_PREFIX: Final = "Mailer"
 
 RESPONDER_POLL_INTERVAL: Final[float] = 2.0  # seconds between responder status polls
 RESPONDER_TIMEOUT: Final[float] = 180.0  # seconds before a responder run is given up
+POLL_MAX_ERRORS = 3 # max errors before the job is canceled
 
 _TERMINAL_ACTION_STATUSES: Final = ("Success", "Failure")
 
@@ -82,15 +84,17 @@ def _build_description(responder_name: str, recipient: str, subject: str, body: 
 def _wait_for_responder(task_id: str) -> bool:
     """Poll the responder action on a task until it finishes or times out."""
     deadline = time.monotonic() + RESPONDER_TIMEOUT
-    errors = 0
-    while time.monotonic() < deadline and errors < 3:
+    api_errors = 0
+    while time.monotonic() < deadline and api_errors < POLL_MAX_ERRORS:
         time.sleep(RESPONDER_POLL_INTERVAL)
         try:
             action = thehive.get_responder_action("Task", task_id)
         except TheHiveApiError as exc:
             log.debug("Polling responder action on task %s failed (%s)", task_id, exc)
-            errors += 1
+            api_errors += 1
             continue
+        # reset api errors after successful poll
+        api_errors = 0
         if action.get("status") in _TERMINAL_ACTION_STATUSES:
             return action["status"] == "Success"
     return False
@@ -128,7 +132,7 @@ class Notifier:
         """
         title = built.case["title"].removeprefix(CASE_TITLE_PREFIX)
         body_lines = [
-            RESULT_LINK_TEMPLATE.format(analysis_id=analysis_id),
+            RESULT_LINK_TEMPLATE.format(base_url=config.get_app_config()["webapp"]["base_url"], analysis_id=analysis_id),
             "",
             f"Final verdict: {outcome.verdict}",
             "",

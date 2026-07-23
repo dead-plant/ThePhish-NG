@@ -97,8 +97,8 @@ class TestFilteringAndUrls:
         assert kept == ["ok.test"]
         assert any("whitelisted" in entry["message"] for entry in alogger.entries)
 
-    def test_multiline_and_empty_values_are_dropped(self, builder):
-        assert builder._filter_whitelisted("domain", ["", "  ", "bad\nvalue", "ok.test"]) == ["ok.test"]
+    def test_empty_values_are_dropped(self, builder):
+        assert builder._filter_whitelisted("domain", ["", "  ", "ok.test"]) == ["ok.test"]
 
     def test_safelinks_are_decoded(self, monkeypatch, builder):
         monkeypatch.setattr(case_builder.redirect_tracker, "get_trace", lambda url: [])

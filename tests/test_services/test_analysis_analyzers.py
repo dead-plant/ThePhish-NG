@@ -20,8 +20,8 @@ def observable(obs_id, data_type, data=None, tags=(), attachment=None):
     return obs
 
 
-def analyzer(name):
-    return {"id": f"id-{name}", "name": name}
+def analyzer(name, cortex_ids=("cortex",)):
+    return {"id": f"id-{name}", "name": name, "cortexIds": list(cortex_ids)}
 
 
 class TheHiveStub:
@@ -116,6 +116,22 @@ def runner(alogger):
 
 
 class TestAnalyzerSelection:
+    def test_only_analyzers_on_configured_cortex_are_started(self, monkeypatch, runner, alogger):
+        stub = TheHiveStub(
+            monkeypatch,
+            [observable("d1", "domain", data="a.test")],
+            {
+                "domain": [
+                    analyzer("ConfiguredAnalyzer_1_0"),
+                    analyzer("OtherCortexAnalyzer_1_0", cortex_ids=("other-cortex",)),
+                ]
+            },
+        )
+
+        runner.run(BUILT)
+
+        assert stub.started_pairs() == [("ConfiguredAnalyzer_1_0", "d1")]
+
     def test_blacklisted_prefixes_are_skipped(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
@@ -160,17 +176,6 @@ class TestAnalyzerSelection:
 
 
 class TestJobHandling:
-    def test_jobs_are_created_in_bulk(self, monkeypatch, runner, alogger):
-        stub = TheHiveStub(
-            monkeypatch,
-            [observable("d1", "domain", data="a.test"), observable("d2", "domain", data="b.test")],
-            {"domain": [analyzer("DomainWatcher_1_0")]},
-        )
-        runner.run(BUILT)
-        assert len(stub.bulk_calls) == 1
-        assert stub.single_calls == []
-        assert len(stub.jobs) == 2
-
     def test_successful_jobs_refresh_an_observable_once(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
