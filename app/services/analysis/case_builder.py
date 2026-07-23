@@ -26,7 +26,7 @@ from app import config
 from app.repositories import thehive
 from app.repositories.thehive import TheHiveApiError
 from app.services.analysis.errors import AnalysisError
-from app.services.analysis.tracking import AnalysisLogger
+from app.services.analysis.events import EventSink
 from app.utils import observable_extractor, redirect_tracker, safelink_decoder, whitelist
 from app.utils.redirect_tracker import RedirectTrackerError
 from app.utils.safelink_decoder import SafeLinkDecodingError
@@ -69,94 +69,6 @@ def sender_domain(internal_msg: email.message.Message) -> Optional[str]:
     return domain or None
 
 
-def _filter_whitelisted(obs_type: str, values: list[str], alogger: AnalysisLogger) -> list[str]:
-    """Drop empty, multi-line and whitelisted values from an observable list."""
-    kept = []
-    for value in values:
-        value = value.strip()
-        if not value or "\n" in value or "\r" in value:
-            continue
-        if obs_type in _WHITELISTED_TYPES and whitelist.is_whitelisted(obs_type, value):
-            alogger.info(f"Skipped whitelisted {obs_type}: {value}")
-            continue
-        kept.append(value)
-    return kept
-
-
-def _decode_safelinks(urls: list[str], alogger: AnalysisLogger) -> list[str]:
-    """Decode Outlook SafeLinks among the given URLs and return the targets."""
-    decoded = []
-    for url in urls:
-        try:
-            if not safelink_decoder.is_safelink(url):
-                continue
-            target = safelink_decoder.decode_safelink(url)
-        except (SafeLinkDecodingError, ValueError) as exc:
-            alogger.warning(f"Could not decode SafeLink {url}: {exc}")
-            continue
-        alogger.info(f"Decoded SafeLink {url} to {target}")
-        decoded.append(target)
-    return decoded
-
-
-def _expand_redirects(urls: list[str], alogger: AnalysisLogger) -> list[str]:
-    """Follow the HTTP redirects of the given URLs and return every hop found."""
-    targets = []
-    for url in urls:
-        try:
-            trace = redirect_tracker.get_trace(url) or []
-        except (RedirectTrackerError, ValueError) as exc:
-            alogger.warning(f"Could not follow redirects of {url}: {exc}")
-            continue
-        if trace:
-            alogger.info(f"URL {url} redirects through: {' -> '.join(trace)}")
-            targets.extend(trace)
-    return targets
-
-
-def _collect_urls(extracted_urls: list[str], alogger: AnalysisLogger) -> dict[str, list[str]]:
-    """Whitelist-filter and expand the extracted URLs.
-
-    Returns:
-        Groups of new, deduplicated URLs: 'url' (extracted), 'safelink_decoded'
-        and 'redirect_target'. Expansion failures are logged, never fatal.
-    """
-    analysis_config = config.get_app_config()["analysis"]
-
-    urls = _filter_whitelisted("url", extracted_urls, alogger)
-
-    decoded = []
-    if analysis_config["decode_o365_safelinks"]:
-        decoded = _filter_whitelisted("url", _decode_safelinks(urls, alogger), alogger)
-
-    redirect_targets = []
-    if analysis_config["follow_url_redirects"]:
-        redirect_targets = _filter_whitelisted("url", _expand_redirects(urls + decoded, alogger), alogger)
-
-    # Deduplicate across all groups; the first occurrence wins.
-    groups = {"url": urls, "safelink_decoded": decoded, "redirect_target": redirect_targets}
-    seen: set[str] = set()
-    for name, group in groups.items():
-        deduplicated = []
-        for url in group:
-            if url not in seen:
-                seen.add(url)
-                deduplicated.append(url)
-        groups[name] = deduplicated
-    return groups
-
-
-def _add_observables(case_id: str, data_type: str, values: list[str], tags: list[str], message: str, alogger: AnalysisLogger) -> None:
-    """Add a batch of observables to the case; a failure is logged, not fatal."""
-    if not values:
-        return
-    try:
-        thehive.create_observable(case_id=case_id, data_type=data_type, data=values, tags=tags, message=message)
-        alogger.info(f"Added {len(values)} {data_type} observable(s): {', '.join(values)}")
-    except (TheHiveApiError, ValueError) as exc:
-        alogger.warning(f"Could not add {data_type} observable(s) {', '.join(values)}: {exc}")
-
-
 def _write_temp_file(directory: str, filename: str, content: bytes) -> str:
     """Write an attachment into the temp directory under a safe, unique name."""
     safe_name = os.path.basename(filename.replace("\\", "/")).strip() or "attachment"
@@ -172,128 +84,215 @@ def _write_temp_file(directory: str, filename: str, content: bytes) -> str:
     return path
 
 
-def _add_attachments(case_id: str, internal_msg: email.message.Message, subject: str, alogger: AnalysisLogger) -> None:
-    """Add the email attachments and the original EML as file observables."""
-    attachments = observable_extractor.extract_attachments(internal_msg)
+class CaseBuilder:
+    """Stage that owns the TheHive case lifecycle of one analysis."""
 
-    with tempfile.TemporaryDirectory(prefix="thephish_") as tmp_dir:
-        for filename, content in attachments:
-            if whitelist.is_whitelisted("filename", filename):
-                alogger.info(f"Skipped whitelisted attachment: {filename}")
-                continue
-            filetype = magic.from_buffer(content, mime=True)
-            if whitelist.is_whitelisted("filetype", filetype):
-                alogger.info(f"Skipped attachment {filename} with whitelisted type {filetype}")
-                continue
-            try:
-                path = _write_temp_file(tmp_dir, filename, content)
-                thehive.create_file_observable(case_id=case_id, file_path=path, tags=["email", "email_attachment"], message="Found as email attachment")
-                alogger.info(f"Added attachment as file observable: {filename}")
-            except (TheHiveApiError, ValueError, OSError) as exc:
-                alogger.warning(f"Could not add attachment {filename}: {exc}")
+    def __init__(self, events: EventSink) -> None:
+        self._events = events
 
-        # Attach the original email, so analyzers like Yara can scan it.
+    def build_case(self, internal_msg: email.message.Message) -> BuiltCase:
+        """Create the TheHive case for the reported email and populate it.
+
+        A failure to add a single observable or attachment is logged as a
+        warning; a failure to create the case itself is fatal.
+
+        Raises:
+            AnalysisError: If the case (or its template) cannot be created.
+        """
+        observables = observable_extractor.extract_observables(internal_msg)
+        subject = observables["mail-subject"][0] if observables["mail-subject"] else ""
+        self._events.info(f"Analyzing attached email with subject: {subject!r}")
+
         try:
-            eml_path = _write_temp_file(tmp_dir, f"{subject or 'attached_email'}.eml", internal_msg.as_bytes())
-            thehive.create_file_observable(case_id=case_id, file_path=eml_path, tags=["email", EML_SAMPLE_TAG], message="Attached email in EML format")
-            alogger.info(f"Added the original email as file observable: {os.path.basename(eml_path)}")
-        except (TheHiveApiError, ValueError, OSError) as exc:
-            alogger.warning(f"Could not attach the original email: {exc}")
+            thehive.create_case_template_unless_exists(
+                name=CASE_TEMPLATE_NAME,
+                title_prefix=CASE_TITLE_PREFIX,
+                tasks=[{"title": title} for title in TASK_TITLES],
+            )
+        except TheHiveApiError as exc:
+            raise AnalysisError(f"Could not ensure the {CASE_TEMPLATE_NAME} case template") from exc
 
-
-def build_case(internal_msg: email.message.Message, alogger: AnalysisLogger) -> BuiltCase:
-    """Create the TheHive case for the reported email and populate it.
-
-    A failure to add a single observable or attachment is logged as a warning;
-    a failure to create the case itself is fatal.
-
-    Raises:
-        AnalysisError: If the case (or its template) cannot be created.
-    """
-    observables = observable_extractor.extract_observables(internal_msg)
-    subject = observables["mail-subject"][0] if observables["mail-subject"] else ""
-    alogger.info(f"Analyzing attached email with subject: {subject!r}")
-
-    try:
-        thehive.create_case_template_unless_exists(
-            name=CASE_TEMPLATE_NAME,
-            title_prefix=CASE_TITLE_PREFIX,
-            tasks=[{"title": title} for title in TASK_TITLES],
-        )
-    except TheHiveApiError as exc:
-        raise AnalysisError(f"Could not ensure the {CASE_TEMPLATE_NAME} case template") from exc
-
-    case_config = config.get_app_config()["case"]
-    # Emojis are removed to prevent problems when exporting the case to MISP.
-    title = str(emoji.replace_emoji(subject)).strip() or "(no subject)"
-    try:
-        case = thehive.create_case(
-            title=title,
-            tlp=int(case_config["tlp"]),
-            pap=int(case_config["pap"]),
-            tags=list(case_config["tags"]),
-            description="Case created automatically by ThePhish",
-            template=CASE_TEMPLATE_NAME,
-        )
-    except (TheHiveApiError, ValueError) as exc:
-        raise AnalysisError("Could not create the TheHive case") from exc
-    case_id = case["_id"]
-    alogger.info(f"Created case #{case['number']}")
-
-    # The sender domain is added separately with its marker tag, so the
-    # SPF/DMARC analyzer can be restricted to it.
-    domain_of_sender = sender_domain(internal_msg)
-    if domain_of_sender is None:
-        alogger.warning("Could not determine the sender domain; the SPF/DMARC analyzer will not run")
-    elif whitelist.is_whitelisted("domain", domain_of_sender):
-        alogger.info(f"Skipped whitelisted sender domain: {domain_of_sender}")
-        domain_of_sender = None
-    else:
-        _add_observables(case_id, "domain", [domain_of_sender], ["email", SENDER_DOMAIN_TAG], "Domain of the sender address of the reported email", alogger)
-
-    for obs_type in ("mail", "mail-subject", "ip", "domain", "hash", "registry", "user-agent", "autonomous-system", "filename"):
-        values = _filter_whitelisted(obs_type, observables[obs_type], alogger)
-        if obs_type == "domain" and domain_of_sender in values:
-            values.remove(domain_of_sender)
-        _add_observables(case_id, obs_type, values, ["email"], "Found in the reported email", alogger)
-
-    url_groups = _collect_urls(observables["url"], alogger)
-    _add_observables(case_id, "url", url_groups["url"], ["email"], "Found in the reported email", alogger)
-    _add_observables(case_id, "url", url_groups["safelink_decoded"], ["email", "safelink_decoded"], "Decoded from an Outlook SafeLink found in the email", alogger)
-    _add_observables(case_id, "url", url_groups["redirect_target"], ["email", "redirect_target"], "Found by following HTTP redirects of URLs in the email", alogger)
-
-    _add_attachments(case_id, internal_msg, subject, alogger)
-
-    try:
-        task_ids = {task["title"]: task["_id"] for task in thehive.find_all_tasks(case_id) if task["title"] in TASK_TITLES}
-    except TheHiveApiError as exc:
-        alogger.warning(f"Could not list the case tasks: {exc}")
-        task_ids = {}
-
-    return BuiltCase(case=case, task_ids=task_ids)
-
-
-def finalize_case(built: BuiltCase, verdict: str, alogger: AnalysisLogger) -> None:
-    """Close (and for malicious verdicts export) the case; failures are warnings.
-
-    A suspicious verdict leaves the case open for manual review.
-    """
-    case_id = built.case["_id"]
-
-    if verdict == "Suspicious":
-        alogger.info("The verdict is not final: the case stays open for manual review")
-        return
-
-    if verdict == "Malicious":
+        case_config = config.get_app_config()["case"]
+        # Emojis are removed to prevent problems when exporting the case to MISP.
+        title = str(emoji.replace_emoji(subject)).strip() or "(no subject)"
         try:
-            thehive.export_case(case_id, config.get_app_config()["thehive"]["misp_id"])
-            alogger.info("Exported the case to MISP")
+            case = thehive.create_case(
+                title=title,
+                tlp=int(case_config["tlp"]),
+                pap=int(case_config["pap"]),
+                tags=list(case_config["tags"]),
+                description="Case created automatically by ThePhish",
+                template=CASE_TEMPLATE_NAME,
+            )
         except (TheHiveApiError, ValueError) as exc:
-            alogger.warning(f"Could not export the case to MISP: {exc}")
+            raise AnalysisError("Could not create the TheHive case") from exc
+        case_id = case["_id"]
+        self._events.info(f"Created case #{case['number']}")
 
-    resolution = "TruePositive" if verdict == "Malicious" else "FalsePositive"
-    try:
-        thehive.close_case(case_id=case_id, status=resolution, summary="Automated analysis by ThePhish", impact_status="NoImpact")
-        alogger.info(f"Closed the case as {resolution}")
-    except (TheHiveApiError, ValueError) as exc:
-        alogger.warning(f"Could not close the case: {exc}")
+        # The sender domain is added separately with its marker tag, so the
+        # SPF/DMARC analyzer can be restricted to it.
+        domain_of_sender = sender_domain(internal_msg)
+        if domain_of_sender is None:
+            self._events.warning("Could not determine the sender domain; the SPF/DMARC analyzer will not run")
+        elif whitelist.is_whitelisted("domain", domain_of_sender):
+            self._events.info(f"Skipped whitelisted sender domain: {domain_of_sender}")
+            domain_of_sender = None
+        else:
+            self._add_observables(case_id, "domain", [domain_of_sender], ["email", SENDER_DOMAIN_TAG], "Domain of the sender address of the reported email")
+
+        for obs_type in ("mail", "mail-subject", "ip", "domain", "hash", "registry", "user-agent", "autonomous-system", "filename"):
+            values = self._filter_whitelisted(obs_type, observables[obs_type])
+            if obs_type == "domain" and domain_of_sender in values:
+                values.remove(domain_of_sender)
+            self._add_observables(case_id, obs_type, values, ["email"], "Found in the reported email")
+
+        url_groups = self._collect_urls(observables["url"])
+        self._add_observables(case_id, "url", url_groups["url"], ["email"], "Found in the reported email")
+        self._add_observables(case_id, "url", url_groups["safelink_decoded"], ["email", "safelink_decoded"], "Decoded from an Outlook SafeLink found in the email")
+        self._add_observables(case_id, "url", url_groups["redirect_target"], ["email", "redirect_target"], "Found by following HTTP redirects of URLs in the email")
+
+        self._add_attachments(case_id, internal_msg, subject)
+
+        try:
+            task_ids = {task["title"]: task["_id"] for task in thehive.find_all_tasks(case_id) if task["title"] in TASK_TITLES}
+        except TheHiveApiError as exc:
+            self._events.warning(f"Could not list the case tasks: {exc}")
+            task_ids = {}
+
+        return BuiltCase(case=case, task_ids=task_ids)
+
+    def finalize_case(self, built: BuiltCase, verdict: str) -> None:
+        """Close (and for malicious verdicts export) the case; failures are warnings.
+
+        A suspicious verdict leaves the case open for manual review.
+        """
+        case_id = built.case["_id"]
+
+        if verdict == "Suspicious":
+            self._events.info("The verdict is not final: the case stays open for manual review")
+            return
+
+        if verdict == "Malicious":
+            try:
+                thehive.export_case(case_id, config.get_app_config()["thehive"]["misp_id"])
+                self._events.info("Exported the case to MISP")
+            except (TheHiveApiError, ValueError) as exc:
+                self._events.warning(f"Could not export the case to MISP: {exc}")
+
+        resolution = "TruePositive" if verdict == "Malicious" else "FalsePositive"
+        try:
+            thehive.close_case(case_id=case_id, status=resolution, summary="Automated analysis by ThePhish", impact_status="NoImpact")
+            self._events.info(f"Closed the case as {resolution}")
+        except (TheHiveApiError, ValueError) as exc:
+            self._events.warning(f"Could not close the case: {exc}")
+
+    def _filter_whitelisted(self, obs_type: str, values: list[str]) -> list[str]:
+        """Drop empty, multi-line and whitelisted values from an observable list."""
+        kept = []
+        for value in values:
+            value = value.strip()
+            if not value or "\n" in value or "\r" in value:
+                continue
+            if obs_type in _WHITELISTED_TYPES and whitelist.is_whitelisted(obs_type, value):
+                self._events.info(f"Skipped whitelisted {obs_type}: {value}")
+                continue
+            kept.append(value)
+        return kept
+
+    def _decode_safelinks(self, urls: list[str]) -> list[str]:
+        """Decode Outlook SafeLinks among the given URLs and return the targets."""
+        decoded = []
+        for url in urls:
+            try:
+                if not safelink_decoder.is_safelink(url):
+                    continue
+                target = safelink_decoder.decode_safelink(url)
+            except (SafeLinkDecodingError, ValueError) as exc:
+                self._events.warning(f"Could not decode SafeLink {url}: {exc}")
+                continue
+            self._events.info(f"Decoded SafeLink {url} to {target}")
+            decoded.append(target)
+        return decoded
+
+    def _expand_redirects(self, urls: list[str]) -> list[str]:
+        """Follow the HTTP redirects of the given URLs and return every hop found."""
+        targets = []
+        for url in urls:
+            try:
+                trace = redirect_tracker.get_trace(url) or []
+            except (RedirectTrackerError, ValueError) as exc:
+                self._events.warning(f"Could not follow redirects of {url}: {exc}")
+                continue
+            if trace:
+                self._events.info(f"URL {url} redirects through: {' -> '.join(trace)}")
+                targets.extend(trace)
+        return targets
+
+    def _collect_urls(self, extracted_urls: list[str]) -> dict[str, list[str]]:
+        """Whitelist-filter and expand the extracted URLs.
+
+        Returns:
+            Groups of new, deduplicated URLs: 'url' (extracted), 'safelink_decoded'
+            and 'redirect_target'. Expansion failures are logged, never fatal.
+        """
+        analysis_config = config.get_app_config()["analysis"]
+
+        urls = self._filter_whitelisted("url", extracted_urls)
+
+        decoded = []
+        if analysis_config["decode_o365_safelinks"]:
+            decoded = self._filter_whitelisted("url", self._decode_safelinks(urls))
+
+        redirect_targets = []
+        if analysis_config["follow_url_redirects"]:
+            redirect_targets = self._filter_whitelisted("url", self._expand_redirects(urls + decoded))
+
+        # Deduplicate across all groups; the first occurrence wins.
+        groups = {"url": urls, "safelink_decoded": decoded, "redirect_target": redirect_targets}
+        seen: set[str] = set()
+        for name, group in groups.items():
+            deduplicated = []
+            for url in group:
+                if url not in seen:
+                    seen.add(url)
+                    deduplicated.append(url)
+            groups[name] = deduplicated
+        return groups
+
+    def _add_observables(self, case_id: str, data_type: str, values: list[str], tags: list[str], message: str) -> None:
+        """Add a batch of observables to the case; a failure is logged, not fatal."""
+        if not values:
+            return
+        try:
+            thehive.create_observable(case_id=case_id, data_type=data_type, data=values, tags=tags, message=message)
+            self._events.info(f"Added {len(values)} {data_type} observable(s): {', '.join(values)}")
+        except (TheHiveApiError, ValueError) as exc:
+            self._events.warning(f"Could not add {data_type} observable(s) {', '.join(values)}: {exc}")
+
+    def _add_attachments(self, case_id: str, internal_msg: email.message.Message, subject: str) -> None:
+        """Add the email attachments and the original EML as file observables."""
+        attachments = observable_extractor.extract_attachments(internal_msg)
+
+        with tempfile.TemporaryDirectory(prefix="thephish_") as tmp_dir:
+            for filename, content in attachments:
+                if whitelist.is_whitelisted("filename", filename):
+                    self._events.info(f"Skipped whitelisted attachment: {filename}")
+                    continue
+                filetype = magic.from_buffer(content, mime=True)
+                if whitelist.is_whitelisted("filetype", filetype):
+                    self._events.info(f"Skipped attachment {filename} with whitelisted type {filetype}")
+                    continue
+                try:
+                    path = _write_temp_file(tmp_dir, filename, content)
+                    thehive.create_file_observable(case_id=case_id, file_path=path, tags=["email", "email_attachment"], message="Found as email attachment")
+                    self._events.info(f"Added attachment as file observable: {filename}")
+                except (TheHiveApiError, ValueError, OSError) as exc:
+                    self._events.warning(f"Could not add attachment {filename}: {exc}")
+
+            # Attach the original email, so analyzers like Yara can scan it.
+            try:
+                eml_path = _write_temp_file(tmp_dir, f"{subject or 'attached_email'}.eml", internal_msg.as_bytes())
+                thehive.create_file_observable(case_id=case_id, file_path=eml_path, tags=["email", EML_SAMPLE_TAG], message="Attached email in EML format")
+                self._events.info(f"Added the original email as file observable: {os.path.basename(eml_path)}")
+            except (TheHiveApiError, ValueError, OSError) as exc:
+                self._events.warning(f"Could not attach the original email: {exc}")

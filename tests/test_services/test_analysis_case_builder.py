@@ -71,6 +71,11 @@ def alogger(fake_redis):
     return tracking.AnalysisLogger("test-analysis")
 
 
+@pytest.fixture()
+def builder(alogger):
+    return case_builder.CaseBuilder(alogger)
+
+
 class TestSenderDomain:
     @pytest.mark.parametrize("from_header,expected", [
         ("user@Example.COM", "example.com"),
@@ -86,39 +91,39 @@ class TestSenderDomain:
 
 
 class TestFilteringAndUrls:
-    def test_whitelisted_values_are_dropped(self, alogger):
+    def test_whitelisted_values_are_dropped(self, builder, alogger):
         # schemas.microsoft.com is whitelisted in config-example/whitelist.json
-        kept = case_builder._filter_whitelisted("domain", ["schemas.microsoft.com", "ok.test"], alogger)
+        kept = builder._filter_whitelisted("domain", ["schemas.microsoft.com", "ok.test"])
         assert kept == ["ok.test"]
         assert any("whitelisted" in entry["message"] for entry in alogger.entries)
 
-    def test_multiline_and_empty_values_are_dropped(self, alogger):
-        assert case_builder._filter_whitelisted("domain", ["", "  ", "bad\nvalue", "ok.test"], alogger) == ["ok.test"]
+    def test_multiline_and_empty_values_are_dropped(self, builder):
+        assert builder._filter_whitelisted("domain", ["", "  ", "bad\nvalue", "ok.test"]) == ["ok.test"]
 
-    def test_safelinks_are_decoded(self, monkeypatch, alogger):
+    def test_safelinks_are_decoded(self, monkeypatch, builder):
         monkeypatch.setattr(case_builder.redirect_tracker, "get_trace", lambda url: [])
         safelink = "https://eur01.safelinks.protection.outlook.com/?url=http%3A%2F%2Ftarget.test%2Fpage"
-        groups = case_builder._collect_urls([safelink], alogger)
+        groups = builder._collect_urls([safelink])
         assert groups["url"] == [safelink]
         assert groups["safelink_decoded"] == ["http://target.test/page"]
 
-    def test_redirects_are_expanded_and_failures_recoverable(self, monkeypatch, alogger):
+    def test_redirects_are_expanded_and_failures_recoverable(self, monkeypatch, builder, alogger):
         def get_trace(url):
             if url == "http://short.test/a":
                 return ["http://landing.test/final"]
             raise case_builder.RedirectTrackerError("connection refused")
 
         monkeypatch.setattr(case_builder.redirect_tracker, "get_trace", get_trace)
-        groups = case_builder._collect_urls(["http://short.test/a", "http://broken.test/b"], alogger)
+        groups = builder._collect_urls(["http://short.test/a", "http://broken.test/b"])
         assert groups["redirect_target"] == ["http://landing.test/final"]
         # the log entry exists, defanged so the broken URL is not clickable
         assert any("Could not follow redirects of hXXp://broken[.]test/b" in entry["message"] for entry in alogger.entries)
 
 
 class TestBuildCase:
-    def test_happy_path_populates_the_case(self, monkeypatch, alogger):
+    def test_happy_path_populates_the_case(self, monkeypatch, builder):
         stub = CaseStub(monkeypatch)
-        built = case_builder.build_case(make_eml(), alogger)
+        built = builder.build_case(make_eml())
 
         assert built.case is stub.case
         assert built.task_ids == {NOTIFICATION_TASK: "t1", ANALYSIS_TASK: "t2", RESULT_TASK: "t3"}
@@ -142,23 +147,23 @@ class TestBuildCase:
         eml_tags = next(tags for name, tags in stub.files if name.endswith(".eml"))
         assert case_builder.EML_SAMPLE_TAG in eml_tags
 
-    def test_case_creation_failure_is_fatal(self, monkeypatch, alogger):
+    def test_case_creation_failure_is_fatal(self, monkeypatch, builder):
         CaseStub(monkeypatch, create_error=thehive.TheHiveApiError("api down"))
         with pytest.raises(AnalysisError):
-            case_builder.build_case(make_eml(), alogger)
+            builder.build_case(make_eml())
 
-    def test_single_observable_failure_is_recoverable(self, monkeypatch, alogger):
+    def test_single_observable_failure_is_recoverable(self, monkeypatch, builder, alogger):
         stub = CaseStub(monkeypatch, observable_error_types={"url"})
-        built = case_builder.build_case(make_eml(), alogger)
+        built = builder.build_case(make_eml())
 
         assert built.case is stub.case
         assert any(entry["level"] == "warning" and "url" in entry["message"] for entry in alogger.entries)
         assert stub.observables_of_type("mail")  # other observables were still added
 
-    def test_whitelisted_attachment_is_skipped(self, monkeypatch, alogger):
+    def test_whitelisted_attachment_is_skipped(self, monkeypatch, builder, alogger):
         stub = CaseStub(monkeypatch)
         monkeypatch.setattr(case_builder.whitelist, "is_whitelisted", lambda obs_type, value: obs_type == "filename" and value == "invoice.pdf")
-        case_builder.build_case(make_eml(), alogger)
+        builder.build_case(make_eml())
 
         file_names = {name for name, _ in stub.files}
         assert "invoice.pdf" not in file_names
@@ -166,32 +171,32 @@ class TestBuildCase:
 
 
 class TestFinalizeCase:
-    def test_malicious_verdict_exports_and_closes(self, monkeypatch, alogger):
+    def test_malicious_verdict_exports_and_closes(self, monkeypatch, builder, alogger):
         calls = []
         monkeypatch.setattr(thehive, "export_case", lambda case_id, misp_id: calls.append(("export", case_id, misp_id)))
         monkeypatch.setattr(thehive, "close_case", lambda *, case_id, status, summary, impact_status: calls.append(("close", case_id, status)))
         built = case_builder.BuiltCase(case={"_id": "case1", "number": 7, "title": "[ThePhish] x"}, task_ids={})
 
-        case_builder.finalize_case(built, "Malicious", alogger)
+        builder.finalize_case(built, "Malicious")
         assert calls == [("export", "case1", "MISP"), ("close", "case1", "TruePositive")]
 
-    def test_safe_verdict_closes_as_false_positive(self, monkeypatch, alogger):
+    def test_safe_verdict_closes_as_false_positive(self, monkeypatch, builder, alogger):
         calls = []
         monkeypatch.setattr(thehive, "export_case", lambda case_id, misp_id: calls.append("export"))
         monkeypatch.setattr(thehive, "close_case", lambda *, case_id, status, summary, impact_status: calls.append(("close", status)))
         built = case_builder.BuiltCase(case={"_id": "case1", "number": 7, "title": "[ThePhish] x"}, task_ids={})
 
-        case_builder.finalize_case(built, "Safe", alogger)
+        builder.finalize_case(built, "Safe")
         assert calls == [("close", "FalsePositive")]
 
-    def test_suspicious_verdict_leaves_case_open(self, monkeypatch, alogger):
+    def test_suspicious_verdict_leaves_case_open(self, monkeypatch, builder, alogger):
         monkeypatch.setattr(thehive, "close_case", lambda **kwargs: pytest.fail("case must stay open"))
         built = case_builder.BuiltCase(case={"_id": "case1", "number": 7, "title": "[ThePhish] x"}, task_ids={})
 
-        case_builder.finalize_case(built, "Suspicious", alogger)
+        builder.finalize_case(built, "Suspicious")
         assert any("stays open" in entry["message"] for entry in alogger.entries)
 
-    def test_export_failure_is_recoverable(self, monkeypatch, alogger):
+    def test_export_failure_is_recoverable(self, monkeypatch, builder, alogger):
         def export_error(case_id, misp_id):
             raise thehive.TheHiveApiError("misp down")
 
@@ -200,6 +205,6 @@ class TestFinalizeCase:
         monkeypatch.setattr(thehive, "close_case", lambda **kwargs: closed.append(kwargs))
         built = case_builder.BuiltCase(case={"_id": "case1", "number": 7, "title": "[ThePhish] x"}, task_ids={})
 
-        case_builder.finalize_case(built, "Malicious", alogger)
+        builder.finalize_case(built, "Malicious")
         assert closed and closed[0]["status"] == "TruePositive"
         assert any("Could not export" in entry["message"] for entry in alogger.entries)

@@ -115,7 +115,9 @@ def _run_workflow(analysis_id: str, mail_uid: int, alogger: AnalysisLogger) -> s
         raise AnalysisError("Could not fetch the email: the IMAP mailbox is unavailable") from exc
     alogger.info(f"Fetched the email with UID {mail_uid} (flagged as read)")
 
-    built = case_builder.build_case(internal_msg, alogger)
+    builder = case_builder.CaseBuilder(alogger)
+
+    built = builder.build_case(internal_msg)
     tracking.set_state_fields(analysis_id, case_id=built.case["_id"], case_number=str(built.case["number"]))
 
     notifications.send_analysis_started(built, reporter_address, alogger)
@@ -123,6 +125,6 @@ def _run_workflow(analysis_id: str, mail_uid: int, alogger: AnalysisLogger) -> s
     outcome = analyzers.run_analyzers(built, alogger)
     alogger.info(f"The email has been classified as {outcome.verdict}")
 
-    case_builder.finalize_case(built, outcome.verdict, alogger)
+    builder.finalize_case(built, outcome.verdict)
     notifications.send_analysis_result(built, reporter_address, analysis_id, outcome, alogger)
     return outcome.verdict
