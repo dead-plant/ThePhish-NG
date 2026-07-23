@@ -239,6 +239,14 @@ class AnalysisLogger:
     def error(self, message: str) -> None:
         self._append("error", message)
 
+    def snapshot(self) -> list[dict]:
+        """Return a copy of all entries recorded so far.
+
+        The in-memory entries are the source, so the snapshot stays complete
+        even if individual Redis writes failed.
+        """
+        return list(self.entries)
+
 
 # --- SSE streaming ----------------------------------------------------------
 def _sse(event: str, data: dict, event_id: Optional[int] = None) -> str:
