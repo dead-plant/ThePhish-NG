@@ -116,13 +116,14 @@ def _run_workflow(analysis_id: str, mail_uid: int, alogger: AnalysisLogger) -> s
     alogger.info(f"Fetched the email with UID {mail_uid} (flagged as read)")
 
     builder = case_builder.CaseBuilder(alogger)
+    runner = analyzers.AnalyzerRunner(alogger)
 
     built = builder.build_case(internal_msg)
     tracking.set_state_fields(analysis_id, case_id=built.case["_id"], case_number=str(built.case["number"]))
 
     notifications.send_analysis_started(built, reporter_address, alogger)
 
-    outcome = analyzers.run_analyzers(built, alogger)
+    outcome = runner.run(built)
     alogger.info(f"The email has been classified as {outcome.verdict}")
 
     builder.finalize_case(built, outcome.verdict)

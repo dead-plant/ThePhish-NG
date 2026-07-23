@@ -110,18 +110,23 @@ def alogger(fake_redis):
     return tracking.AnalysisLogger("test-analysis")
 
 
+@pytest.fixture()
+def runner(alogger):
+    return analyzers.AnalyzerRunner(alogger)
+
+
 class TestAnalyzerSelection:
-    def test_blacklisted_prefixes_are_skipped(self, monkeypatch, alogger):
+    def test_blacklisted_prefixes_are_skipped(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
             [observable("o1", "url", data="http://x.test/a")],
             {"url": [analyzer("UnshortenLink_1_2"), analyzer("MSDefenderOffice365_SafeLinksDecoder_json_1_0"), analyzer("SomeUrlAnalyzer_1_0")]},
         )
-        analyzers.run_analyzers(BUILT, alogger)
+        runner.run(BUILT)
         assert stub.started_pairs() == [("SomeUrlAnalyzer_1_0", "o1")]
         assert any("blacklisted" in entry["message"] for entry in alogger.entries)
 
-    def test_spf_dmarc_runs_only_on_sender_domain(self, monkeypatch, alogger):
+    def test_spf_dmarc_runs_only_on_sender_domain(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
             [
@@ -130,14 +135,14 @@ class TestAnalyzerSelection:
             ],
             {"domain": [analyzer("DomainMailSPFDMARC_1_2"), analyzer("DomainWatcher_1_0")]},
         )
-        analyzers.run_analyzers(BUILT, alogger)
+        runner.run(BUILT)
         assert stub.started_pairs() == [
             ("DomainMailSPFDMARC_1_2", "d1"),
             ("DomainWatcher_1_0", "d1"),
             ("DomainWatcher_1_0", "d2"),
         ]
 
-    def test_only_yara_runs_on_the_eml_file(self, monkeypatch, alogger):
+    def test_only_yara_runs_on_the_eml_file(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
             [
@@ -146,7 +151,7 @@ class TestAnalyzerSelection:
             ],
             {"file": [analyzer("Yara_3_0"), analyzer("FileInfo_8_0")]},
         )
-        analyzers.run_analyzers(BUILT, alogger)
+        runner.run(BUILT)
         assert stub.started_pairs() == [
             ("FileInfo_8_0", "f2"),
             ("Yara_3_0", "f1"),
@@ -155,18 +160,18 @@ class TestAnalyzerSelection:
 
 
 class TestJobHandling:
-    def test_jobs_are_created_in_bulk(self, monkeypatch, alogger):
+    def test_jobs_are_created_in_bulk(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
             [observable("d1", "domain", data="a.test"), observable("d2", "domain", data="b.test")],
             {"domain": [analyzer("DomainWatcher_1_0")]},
         )
-        analyzers.run_analyzers(BUILT, alogger)
+        runner.run(BUILT)
         assert len(stub.bulk_calls) == 1
         assert stub.single_calls == []
         assert len(stub.jobs) == 2
 
-    def test_successful_jobs_refresh_an_observable_once(self, monkeypatch, alogger):
+    def test_successful_jobs_refresh_an_observable_once(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
             [observable("d1", "domain", data="odd.test")],
@@ -174,12 +179,12 @@ class TestJobHandling:
             levels={"First_1_0": "suspicious", "Second_1_0": "info"},
         )
 
-        outcome = analyzers.run_analyzers(BUILT, alogger)
+        outcome = runner.run(BUILT)
 
         assert outcome.verdict == "Suspicious"
         assert stub.observable_gets == ["d1"]
 
-    def test_fallback_to_individual_jobs(self, monkeypatch, alogger):
+    def test_fallback_to_individual_jobs(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
             [observable("d1", "domain", data="a.test")],
@@ -187,13 +192,13 @@ class TestJobHandling:
             bulk_error=thehive.TheHiveApiError("bulk endpoint not found"),
             fail_single={"BadAnalyzer_1_0"},
         )
-        outcome = analyzers.run_analyzers(BUILT, alogger)
+        outcome = runner.run(BUILT)
         # the failed analyzer does not prevent the other one from running
         assert stub.started_pairs() == [("GoodAnalyzer_1_0", "d1")]
         assert any("could not be started" in line for line in outcome.summary_lines)
         assert "Analyzer reports: 1 collected, 1 failed" in outcome.summary_lines
 
-    def test_timed_out_jobs_are_reported(self, monkeypatch, alogger):
+    def test_timed_out_jobs_are_reported(self, monkeypatch, runner, alogger):
         monkeypatch.setattr(analyzers, "JOB_TIMEOUT", 0.05)
         monkeypatch.setattr(analyzers, "POLL_INTERVAL", 0.0)
         TheHiveStub(
@@ -202,36 +207,36 @@ class TestJobHandling:
             {"domain": [analyzer("SlowAnalyzer_1_0")]},
             job_statuses={"SlowAnalyzer_1_0": "InProgress"},
         )
-        outcome = analyzers.run_analyzers(BUILT, alogger)
+        outcome = runner.run(BUILT)
         assert outcome.verdict == "Safe"
         assert any("timed out" in line for line in outcome.summary_lines)
 
-    def test_failed_jobs_are_reported(self, monkeypatch, alogger):
+    def test_failed_jobs_are_reported(self, monkeypatch, runner, alogger):
         TheHiveStub(
             monkeypatch,
             [observable("d1", "domain", data="a.test")],
             {"domain": [analyzer("FailingAnalyzer_1_0")]},
             job_statuses={"FailingAnalyzer_1_0": "Failure"},
         )
-        outcome = analyzers.run_analyzers(BUILT, alogger)
+        outcome = runner.run(BUILT)
         assert any("job failed" in line for line in outcome.summary_lines)
         assert any(entry["level"] == "warning" and "FailingAnalyzer_1_0" in entry["message"] for entry in alogger.entries)
 
 
 class TestVerdict:
-    def test_malicious_report_marks_ioc_and_verdict(self, monkeypatch, alogger):
+    def test_malicious_report_marks_ioc_and_verdict(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
             [observable("d1", "domain", data="evil.test")],
             {"domain": [analyzer("MalwareFinder_1_0")]},
             levels={"MalwareFinder_1_0": "malicious"},
         )
-        outcome = analyzers.run_analyzers(BUILT, alogger)
+        outcome = runner.run(BUILT)
         assert outcome.verdict == "Malicious"
         assert stub.ioc_updates == [(["d1"], True)]
         assert "Malicious: MalwareFinder_1_0 on domain evil.test" in outcome.summary_lines
 
-    def test_job_without_taxonomies_uses_observable_report(self, monkeypatch, alogger):
+    def test_job_without_taxonomies_uses_observable_report(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
             [observable("d1", "domain", data="evil.test")],
@@ -240,30 +245,30 @@ class TestVerdict:
             job_reports={"MalwareFinder_1_0": {"artifacts": [], "full": {}, "success": True}},
         )
 
-        outcome = analyzers.run_analyzers(BUILT, alogger)
+        outcome = runner.run(BUILT)
 
         assert outcome.verdict == "Malicious"
         assert stub.ioc_updates == [(["d1"], True)]
 
-    def test_suspicious_report_gives_suspicious_verdict(self, monkeypatch, alogger):
+    def test_suspicious_report_gives_suspicious_verdict(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
             monkeypatch,
             [observable("d1", "domain", data="odd.test")],
             {"domain": [analyzer("MalwareFinder_1_0")]},
             levels={"MalwareFinder_1_0": "suspicious"},
         )
-        outcome = analyzers.run_analyzers(BUILT, alogger)
+        outcome = runner.run(BUILT)
         assert outcome.verdict == "Suspicious"
         assert stub.ioc_updates == []
         assert "Suspicious: MalwareFinder_1_0 on domain odd.test" in outcome.summary_lines
 
-    def test_info_reports_give_safe_verdict(self, monkeypatch, alogger):
+    def test_info_reports_give_safe_verdict(self, monkeypatch, runner, alogger):
         TheHiveStub(
             monkeypatch,
             [observable("d1", "domain", data="fine.test")],
             {"domain": [analyzer("MalwareFinder_1_0")]},
         )
-        outcome = analyzers.run_analyzers(BUILT, alogger)
+        outcome = runner.run(BUILT)
         assert outcome.verdict == "Safe"
         assert outcome.summary_lines[0] == "Analyzer reports: 1 collected, 0 failed"
 
