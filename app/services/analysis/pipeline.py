@@ -103,6 +103,9 @@ def _execute_analysis(analysis_id: str, mail_uid: int) -> None:
 def _run_workflow(analysis_id: str, mail_uid: int, alogger: AnalysisLogger) -> str:
     """Coordinate the analysis stages and return the final verdict.
 
+    Composition root of one analysis execution: the per-analysis event sink
+    is injected once into each stage here.
+
     Raises:
         AnalysisError: If a fatal stage (fetching the email, creating the
             case, running the analyzers) fails.
@@ -117,15 +120,16 @@ def _run_workflow(analysis_id: str, mail_uid: int, alogger: AnalysisLogger) -> s
 
     builder = case_builder.CaseBuilder(alogger)
     runner = analyzers.AnalyzerRunner(alogger)
+    notifier = notifications.Notifier(alogger)
 
     built = builder.build_case(internal_msg)
     tracking.set_state_fields(analysis_id, case_id=built.case["_id"], case_number=str(built.case["number"]))
 
-    notifications.send_analysis_started(built, reporter_address, alogger)
+    notifier.send_analysis_started(built, reporter_address)
 
     outcome = runner.run(built)
     alogger.info(f"The email has been classified as {outcome.verdict}")
 
     builder.finalize_case(built, outcome.verdict)
-    notifications.send_analysis_result(built, reporter_address, analysis_id, outcome, alogger)
+    notifier.send_analysis_result(built, reporter_address, analysis_id, outcome, alogger.snapshot())
     return outcome.verdict

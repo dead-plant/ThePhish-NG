@@ -18,7 +18,7 @@ from app.repositories import thehive
 from app.repositories.thehive import TheHiveApiError
 from app.services.analysis.analyzers import AnalysisOutcome
 from app.services.analysis.case_builder import CASE_TITLE_PREFIX, NOTIFICATION_TASK, RESULT_TASK, BuiltCase
-from app.services.analysis.tracking import AnalysisLogger
+from app.services.analysis.events import EventSink
 
 log = logging.getLogger(__name__)
 
@@ -96,78 +96,81 @@ def _wait_for_responder(task_id: str) -> bool:
     return False
 
 
-def _send_task_mail(task_id: Optional[str], recipient: str, subject: str, body: str, mail_label: str, alogger: AnalysisLogger) -> None:
-    """Send an email through the mail responder of a case task, best-effort."""
-    if task_id is None:
-        alogger.warning(f"Could not send the {mail_label}: the case task is missing")
-        return
-    validated_recipient = _validate_recipient(recipient)
-    if validated_recipient is None:
-        alogger.warning(f"Could not send the {mail_label}: the reporter address is not a safe email address")
-        return
-
-    try:
-        responder = _select_mail_responder(task_id)
-        if responder is None:
-            alogger.warning(f"Could not send the {mail_label}: no mail responder is enabled")
-            return
-
-        description = _build_description(responder["name"], validated_recipient, _sanitize_subject(subject), body)
-        thehive.update_task(task_id, description=description, status="InProgress")
-        thehive.create_responder_action(responder_id=responder["id"], object_type="case_task", object_id=task_id)
-        if _wait_for_responder(task_id):
-            alogger.info(f"Sent the {mail_label} via {responder['name']}")
-        else:
-            alogger.warning(f"The {mail_label} could not be delivered by {responder['name']}")
-        thehive.update_task(task_id, status="Completed")
-    except (TheHiveApiError, ValueError) as exc:
-        alogger.warning(f"Could not send the {mail_label}: {exc}")
-
-
-def send_analysis_started(built: BuiltCase, recipient: str, alogger: AnalysisLogger) -> None:
-    """Notify the reporter that the analysis of their email has started."""
-    title = built.case["title"].removeprefix(CASE_TITLE_PREFIX)
-    _send_task_mail(
-        task_id=built.task_ids.get(NOTIFICATION_TASK),
-        recipient=recipient,
-        subject=f"ThePhish: your reported email [{title}] is being analyzed",
-        body=ioc_fanger.defang(f"Thanks for the submission. Your e-mail with subject [{title}] is being analyzed."),
-        mail_label="notification email",
-        alogger=alogger,
-    )
-
-
 def _format_log_lines(entries: list[dict]) -> list[str]:
     return [f"[{entry.get('timestamp', '')}] {entry.get('level', ''):<7} {entry.get('message', '')}" for entry in entries]
 
 
-def send_analysis_result(built: BuiltCase, recipient: str, analysis_id: str, outcome: AnalysisOutcome, alogger: AnalysisLogger) -> None:
-    """Send the final result email with the verdict, summary and complete log.
+class Notifier:
+    """Stage that sends the reporter emails of one analysis."""
 
-    The log lines are taken from the logger's in-memory entries, so the email
-    stays complete even if individual Redis log writes failed. All content
-    derived from the analyzed email is defanged; the analysis link at the top
-    is the only clickable URL in the email.
-    """
-    title = built.case["title"].removeprefix(CASE_TITLE_PREFIX)
-    body_lines = [
-        RESULT_LINK_TEMPLATE.format(analysis_id=analysis_id),
-        "",
-        f"Final verdict: {outcome.verdict}",
-        "",
-        ioc_fanger.defang(f"Thanks for your submission. The e-mail with subject [{title}] has been classified as {outcome.verdict}."),
-        "",
-        "--- Analyzer summary ---",
-        *(ioc_fanger.defang(line) for line in outcome.summary_lines),
-        "",
-        "--- Analysis log ---",
-        *_format_log_lines(alogger.entries),  # logger entries are already defanged
-    ]
-    _send_task_mail(
-        task_id=built.task_ids.get(RESULT_TASK),
-        recipient=recipient,
-        subject=f"ThePhish verdict: {outcome.verdict} [{title}]",
-        body="\n".join(body_lines),
-        mail_label="result email",
-        alogger=alogger,
-    )
+    def __init__(self, events: EventSink) -> None:
+        self._events = events
+
+    def send_analysis_started(self, built: BuiltCase, recipient: str) -> None:
+        """Notify the reporter that the analysis of their email has started."""
+        title = built.case["title"].removeprefix(CASE_TITLE_PREFIX)
+        self._send_task_mail(
+            task_id=built.task_ids.get(NOTIFICATION_TASK),
+            recipient=recipient,
+            subject=f"ThePhish: your reported email [{title}] is being analyzed",
+            body=ioc_fanger.defang(f"Thanks for the submission. Your e-mail with subject [{title}] is being analyzed."),
+            mail_label="notification email",
+        )
+
+    def send_analysis_result(self, built: BuiltCase, recipient: str, analysis_id: str, outcome: AnalysisOutcome, transcript: list[dict]) -> None:
+        """Send the final result email with the verdict, summary and complete log.
+
+        The transcript is the snapshot of the analysis log entries recorded so
+        far (already defanged by the sink), so the email stays complete even
+        if individual Redis log writes failed. All content derived from the
+        analyzed email is defanged; the analysis link at the top is the only
+        clickable URL in the email.
+        """
+        title = built.case["title"].removeprefix(CASE_TITLE_PREFIX)
+        body_lines = [
+            RESULT_LINK_TEMPLATE.format(analysis_id=analysis_id),
+            "",
+            f"Final verdict: {outcome.verdict}",
+            "",
+            ioc_fanger.defang(f"Thanks for your submission. The e-mail with subject [{title}] has been classified as {outcome.verdict}."),
+            "",
+            "--- Analyzer summary ---",
+            *(ioc_fanger.defang(line) for line in outcome.summary_lines),
+            "",
+            "--- Analysis log ---",
+            *_format_log_lines(transcript),
+        ]
+        self._send_task_mail(
+            task_id=built.task_ids.get(RESULT_TASK),
+            recipient=recipient,
+            subject=f"ThePhish verdict: {outcome.verdict} [{title}]",
+            body="\n".join(body_lines),
+            mail_label="result email",
+        )
+
+    def _send_task_mail(self, task_id: Optional[str], recipient: str, subject: str, body: str, mail_label: str) -> None:
+        """Send an email through the mail responder of a case task, best-effort."""
+        if task_id is None:
+            self._events.warning(f"Could not send the {mail_label}: the case task is missing")
+            return
+        validated_recipient = _validate_recipient(recipient)
+        if validated_recipient is None:
+            self._events.warning(f"Could not send the {mail_label}: the reporter address is not a safe email address")
+            return
+
+        try:
+            responder = _select_mail_responder(task_id)
+            if responder is None:
+                self._events.warning(f"Could not send the {mail_label}: no mail responder is enabled")
+                return
+
+            description = _build_description(responder["name"], validated_recipient, _sanitize_subject(subject), body)
+            thehive.update_task(task_id, description=description, status="InProgress")
+            thehive.create_responder_action(responder_id=responder["id"], object_type="case_task", object_id=task_id)
+            if _wait_for_responder(task_id):
+                self._events.info(f"Sent the {mail_label} via {responder['name']}")
+            else:
+                self._events.warning(f"The {mail_label} could not be delivered by {responder['name']}")
+            thehive.update_task(task_id, status="Completed")
+        except (TheHiveApiError, ValueError) as exc:
+            self._events.warning(f"Could not send the {mail_label}: {exc}")

@@ -100,10 +100,10 @@ class TestExecuteAnalysis:
 
         monkeypatch.setattr(pipeline.mailbox, "fetch_analyzable_eml", lambda uid: (email.message.Message(), "user@example.com"))
         monkeypatch.setattr(pipeline.case_builder.CaseBuilder, "build_case", lambda self, msg: built)
-        monkeypatch.setattr(pipeline.notifications, "send_analysis_started", lambda *args: stages.append("started"))
+        monkeypatch.setattr(pipeline.notifications.Notifier, "send_analysis_started", lambda self, *args: stages.append("started"))
         monkeypatch.setattr(pipeline.analyzers.AnalyzerRunner, "run", lambda self, b: analyzers.AnalysisOutcome(verdict="Safe", summary_lines=["Analyzer reports: 1 collected, 0 failed"]))
         monkeypatch.setattr(pipeline.case_builder.CaseBuilder, "finalize_case", lambda self, b, verdict: stages.append("finalized"))
-        monkeypatch.setattr(pipeline.notifications, "send_analysis_result", lambda *args: stages.append("result"))
+        monkeypatch.setattr(pipeline.notifications.Notifier, "send_analysis_result", lambda self, *args: stages.append("result"))
 
         pipeline._execute_analysis(ANALYSIS_ID, 5)
 

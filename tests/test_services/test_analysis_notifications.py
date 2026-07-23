@@ -49,10 +49,15 @@ def alogger(fake_redis):
     return tracking.AnalysisLogger("test-analysis")
 
 
+@pytest.fixture()
+def notifier(alogger):
+    return notifications.Notifier(alogger)
+
+
 class TestResponderSelection:
-    def test_phishmailer_is_preferred(self, monkeypatch, alogger):
+    def test_phishmailer_is_preferred(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [MAILER, PHISHMAILER])
-        notifications.send_analysis_started(BUILT, "user@example.com", alogger)
+        notifier.send_analysis_started(BUILT, "user@example.com")
 
         assert stub.actions == [{"responder_id": "id-phishmailer", "object_type": "case_task", "object_id": "task-notif"}]
         directive = stub.task_updates[0][1]["description"].splitlines()[0]
@@ -60,28 +65,28 @@ class TestResponderSelection:
         assert stub.task_updates[-1] == ("task-notif", {"status": "Completed"})
         assert any("Sent the notification email via PhishMailer_1_0" == entry["message"] for entry in alogger.entries)
 
-    def test_fallback_to_standard_mailer(self, monkeypatch, alogger):
+    def test_fallback_to_standard_mailer(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [MAILER])
-        notifications.send_analysis_started(BUILT, "user@example.com", alogger)
+        notifier.send_analysis_started(BUILT, "user@example.com")
 
         assert stub.actions[0]["responder_id"] == "id-mailer"
         description = stub.task_updates[0][1]["description"]
         assert description.startswith("mailto:user@example.com\n")
         assert "#PhishMailer" not in description
 
-    def test_no_responder_available(self, monkeypatch, alogger):
+    def test_no_responder_available(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [])
-        notifications.send_analysis_started(BUILT, "user@example.com", alogger)
+        notifier.send_analysis_started(BUILT, "user@example.com")
 
         assert stub.actions == []
         assert any(entry["level"] == "warning" and "no mail responder" in entry["message"] for entry in alogger.entries)
 
 
 class TestInputSafety:
-    def test_recipient_is_normalized_without_deliverability_check(self, monkeypatch, alogger):
+    def test_recipient_is_normalized_without_deliverability_check(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
 
-        notifications.send_analysis_started(BUILT, "User@NONEXISTENT-DOMAIN-7F9CC67.COM", alogger)
+        notifier.send_analysis_started(BUILT, "User@NONEXISTENT-DOMAIN-7F9CC67.COM")
 
         directive = stub.task_updates[0][1]["description"].splitlines()[0]
         assert "mailto:User@nonexistent-domain-7f9cc67.com;" in directive
@@ -97,9 +102,9 @@ class TestInputSafety:
         "a@b",
         "",
     ])
-    def test_unsafe_recipients_are_rejected(self, monkeypatch, alogger, recipient):
+    def test_unsafe_recipients_are_rejected(self, monkeypatch, notifier, alogger, recipient):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
-        notifications.send_analysis_started(BUILT, recipient, alogger)
+        notifier.send_analysis_started(BUILT, recipient)
 
         assert stub.task_updates == [] and stub.actions == []
         assert any("not a safe email address" in entry["message"] for entry in alogger.entries)
@@ -115,23 +120,23 @@ class TestInputSafety:
         assert "http://evil.example.com" not in subject
         assert "hXXp://evil[.]example[.]com" in subject
 
-    def test_directive_stays_intact_with_hostile_case_title(self, monkeypatch, alogger):
+    def test_directive_stays_intact_with_hostile_case_title(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
         built = BuiltCase(case={"_id": "c", "number": 2, "title": '[ThePhish] evil"; mailto:attacker@evil.test;'}, task_ids=BUILT.task_ids)
-        notifications.send_analysis_started(built, "user@example.com", alogger)
+        notifier.send_analysis_started(built, "user@example.com")
 
         directive = stub.task_updates[0][1]["description"].splitlines()[0]
         assert re.fullmatch(r'#PhishMailer; subject: "[^"]+"; mailto:user@example\.com;', directive)
 
 
 class TestResultEmail:
-    def test_result_email_contains_link_verdict_summary_and_log(self, monkeypatch, alogger):
+    def test_result_email_contains_link_verdict_summary_and_log(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
         alogger.info("step one")
         alogger.warning("step two")
         outcome = AnalysisOutcome(verdict="Malicious", summary_lines=["Analyzer reports: 3 collected, 1 failed", "Malicious: X on domain evil.test"])
 
-        notifications.send_analysis_result(BUILT, "user@example.com", "aid123", outcome, alogger)
+        notifier.send_analysis_result(BUILT, "user@example.com", "aid123", outcome, alogger.snapshot())
 
         body = stub.task_updates[0][1]["description"]
         lines = body.splitlines()
@@ -145,12 +150,12 @@ class TestResultEmail:
         assert stub.actions[0]["object_id"] == "task-result"
         assert stub.task_updates[-1] == ("task-result", {"status": "Completed"})
 
-    def test_result_email_contains_no_clickable_iocs(self, monkeypatch, alogger):
+    def test_result_email_contains_no_clickable_iocs(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
         alogger.info("Found observable url: http://evil.example.com/login")
         outcome = AnalysisOutcome(verdict="Malicious", summary_lines=["Malicious: URLhaus_2_0 on url http://bad.example.org/x"])
 
-        notifications.send_analysis_result(BUILT, "user@example.com", "aid123", outcome, alogger)
+        notifier.send_analysis_result(BUILT, "user@example.com", "aid123", outcome, alogger.snapshot())
 
         body = stub.task_updates[0][1]["description"]
         # the analysis link at the top is the only clickable URL in the email
@@ -160,35 +165,35 @@ class TestResultEmail:
         assert "hXXp://bad[.]example[.]org/x" in body
         assert body.count("https://") == 1  # only https://thephish.example.com/analysis/aid123
 
-    def test_result_email_keeps_log_entries_that_missed_redis(self, monkeypatch, alogger, fake_redis):
+    def test_result_email_keeps_log_entries_that_missed_redis(self, monkeypatch, notifier, alogger, fake_redis):
         stub = ResponderStub(monkeypatch, [MAILER])
         fake_redis.fail_on.add("rpush")
         alogger.info("memory only entry")
         outcome = AnalysisOutcome(verdict="Safe", summary_lines=[])
 
-        notifications.send_analysis_result(BUILT, "user@example.com", "aid123", outcome, alogger)
+        notifier.send_analysis_result(BUILT, "user@example.com", "aid123", outcome, alogger.snapshot())
 
         assert "memory only entry" in stub.task_updates[0][1]["description"]
 
 
 class TestFailureHandling:
-    def test_responder_failure_is_a_warning(self, monkeypatch, alogger):
+    def test_responder_failure_is_a_warning(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER], action_status="Failure")
-        notifications.send_analysis_started(BUILT, "user@example.com", alogger)
+        notifier.send_analysis_started(BUILT, "user@example.com")
 
         assert any("could not be delivered" in entry["message"] for entry in alogger.entries)
         assert stub.task_updates[-1] == ("task-notif", {"status": "Completed"})
 
-    def test_thehive_error_does_not_raise(self, monkeypatch, alogger):
+    def test_thehive_error_does_not_raise(self, monkeypatch, notifier, alogger):
         ResponderStub(monkeypatch, [PHISHMAILER], update_error=thehive.TheHiveApiError("api down"))
-        notifications.send_analysis_result(BUILT, "user@example.com", "aid123", AnalysisOutcome(verdict="Safe", summary_lines=[]), alogger)
+        notifier.send_analysis_result(BUILT, "user@example.com", "aid123", AnalysisOutcome(verdict="Safe", summary_lines=[]), alogger.snapshot())
 
         assert any(entry["level"] == "warning" and "result email" in entry["message"] for entry in alogger.entries)
 
-    def test_missing_task_is_a_warning(self, monkeypatch, alogger):
+    def test_missing_task_is_a_warning(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
         built = BuiltCase(case=BUILT.case, task_ids={})
-        notifications.send_analysis_started(built, "user@example.com", alogger)
+        notifier.send_analysis_started(built, "user@example.com")
 
         assert stub.actions == []
         assert any("the case task is missing" in entry["message"] for entry in alogger.entries)
