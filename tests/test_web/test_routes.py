@@ -70,3 +70,26 @@ def test_analysis_template_does_not_depend_on_socket_io():
     template = Path("app/web/templates/analysis.html").read_text(encoding="utf-8")
 
     assert "socket.io" not in template.lower()
+
+
+def test_index_is_listing_only_and_does_not_require_socket_io(client, monkeypatch):
+    _set_webapp_links(monkeypatch)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+    assert page.select_one("#listMailsBtn") is not None
+    assert "disabled" not in page.select_one("#listMailsBtn").get("class", [])
+    assert page.select_one("#dataTable") is not None
+    assert page.select_one("#logText") is None
+    assert page.select_one("#divResult") is None
+    assert page.select_one("#goBackLink") is None
+    assert not any("socket.io" in (script.get("src") or "").lower() for script in page.select("script"))
+
+
+def test_index_application_script_contains_no_xhr():
+    script = Path("app/web/static/assets/js/thephish.js").read_text(encoding="utf-8")
+
+    assert "XMLHttpRequest" not in script
+    assert "window.fetch.bind(window)" in script
