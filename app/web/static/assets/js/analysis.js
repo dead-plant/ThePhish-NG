@@ -64,6 +64,7 @@
 	function createAnalysisController({analysisId, fetchFn, EventSourceCtor, view}) {
 		const renderedSequences = new Set();
 		const encodedId = encodeURIComponent(analysisId);
+		let disposed = false;
 		let source = null;
 
 		function closeStream() {
@@ -75,7 +76,7 @@
 
 		function addLogEntry(rawEntry) {
 			const entry = normalizeLogEntry(rawEntry);
-			if (!entry || renderedSequences.has(entry.seq)) {
+			if (disposed || !entry || renderedSequences.has(entry.seq)) {
 				return;
 			}
 			const followTail = view.isLogNearBottom();
@@ -87,6 +88,9 @@
 		}
 
 		function showTerminalState(state) {
+			if (disposed) {
+				return;
+			}
 			closeStream();
 			if (state.status === "finished") {
 				if (!verdicts.has(state.verdict)) {
@@ -107,6 +111,9 @@
 		}
 
 		function applyState(state) {
+			if (disposed) {
+				return;
+			}
 			if (!state || typeof state.status !== "string") {
 				throw new DisplayError(loadFallback);
 			}
@@ -122,7 +129,7 @@
 		}
 
 		function openStream() {
-			if (source) {
+			if (disposed || source) {
 				return;
 			}
 			source = new EventSourceCtor(`/api/analyses/${encodedId}/stream`);
@@ -133,6 +140,9 @@
 				}
 			});
 			source.addEventListener("status", (event) => {
+				if (disposed) {
+					return;
+				}
 				const data = parseEventData(event);
 				if (!data || typeof data.status !== "string") {
 					return;
@@ -147,22 +157,41 @@
 					view.showFatalError(loadFallback);
 				}
 			});
-			source.addEventListener("open", () => view.clearConnectionWarning());
-			source.addEventListener("error", () => view.showConnectionWarning());
+			source.addEventListener("open", () => {
+				if (!disposed) {
+					view.clearConnectionWarning();
+				}
+			});
+			source.addEventListener("error", () => {
+				if (!disposed) {
+					view.showConnectionWarning();
+				}
+			});
 		}
 
 		async function load() {
+			if (disposed) {
+				return;
+			}
 			view.clearAlert();
 			view.setStatus("loading");
 			try {
-				const [stateResponse, logResponse] = await Promise.all([
-					fetchFn(`/api/analyses/${encodedId}`),
-					fetchFn(`/api/analyses/${encodedId}/log`),
-				]);
-				const [state, entries] = await Promise.all([
-					readJson(stateResponse),
-					readJson(logResponse),
-				]);
+				const stateResponse = await fetchFn(`/api/analyses/${encodedId}`);
+				if (disposed) {
+					return;
+				}
+				const state = await readJson(stateResponse);
+				if (disposed) {
+					return;
+				}
+				const logResponse = await fetchFn(`/api/analyses/${encodedId}/log`);
+				if (disposed) {
+					return;
+				}
+				const entries = await readJson(logResponse);
+				if (disposed) {
+					return;
+				}
 				if (!Array.isArray(entries)) {
 					throw new DisplayError(loadFallback);
 				}
@@ -174,6 +203,9 @@
 				applyState(state);
 			} catch (error) {
 				closeStream();
+				if (disposed) {
+					return;
+				}
 				view.setStatus("unavailable");
 				view.showFatalError(
 					error instanceof DisplayError ? error.message : loadFallback,
@@ -181,9 +213,14 @@
 			}
 		}
 
+		function dispose() {
+			disposed = true;
+			closeStream();
+		}
+
 		return {
 			load,
-			dispose: closeStream,
+			dispose,
 		};
 	}
 

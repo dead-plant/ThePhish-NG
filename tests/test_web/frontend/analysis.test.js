@@ -96,6 +96,78 @@ function fetchSequence(responses, calls) {
 	};
 }
 
+function deferred() {
+	let resolve;
+	const promise = new Promise((promiseResolve) => {
+		resolve = promiseResolve;
+	});
+	return {promise, resolve};
+}
+
+test("loads state before requesting the persisted log snapshot", async () => {
+	FakeEventSource.instances = [];
+	const stateResponse = deferred();
+	const logRequested = deferred();
+	const calls = [];
+	const view = createView();
+	const controller = createAnalysisController({
+		analysisId: "ordered",
+		fetchFn: async (url) => {
+			calls.push(url);
+			if (url.endsWith("/log")) {
+				logRequested.resolve();
+				return jsonResponse(200, []);
+			}
+			return stateResponse.promise;
+		},
+		EventSourceCtor: FakeEventSource,
+		view,
+	});
+
+	const loadPromise = controller.load();
+
+	assert.deepEqual(calls, ["/api/analyses/ordered"]);
+	stateResponse.resolve(jsonResponse(200, {status: "finished", verdict: "Safe"}));
+	await logRequested.promise;
+	assert.deepEqual(calls, [
+		"/api/analyses/ordered",
+		"/api/analyses/ordered/log",
+	]);
+	await loadPromise;
+});
+
+test("dispose suppresses pending load work before rendering or opening a stream", async () => {
+	FakeEventSource.instances = [];
+	const stateResponse = deferred();
+	const calls = [];
+	const view = createView();
+	const controller = createAnalysisController({
+		analysisId: "disposed",
+		fetchFn: async (url) => {
+			calls.push(url);
+			if (url.endsWith("/log")) {
+				return jsonResponse(200, []);
+			}
+			return stateResponse.promise;
+		},
+		EventSourceCtor: FakeEventSource,
+		view,
+	});
+
+	const loadPromise = controller.load();
+	controller.dispose();
+	stateResponse.resolve(jsonResponse(200, {status: "running"}));
+	await loadPromise;
+
+	assert.deepEqual(calls, ["/api/analyses/disposed"]);
+	assert.deepEqual(view.statuses, ["loading"]);
+	assert.deepEqual(view.entries, []);
+	assert.equal(view.verdict, null);
+	assert.equal(view.failure, null);
+	assert.equal(view.alert, null);
+	assert.equal(FakeEventSource.instances.length, 0);
+});
+
 test("finished direct load renders sorted history and verdict without a stream", async () => {
 	FakeEventSource.instances = [];
 	const calls = [];
