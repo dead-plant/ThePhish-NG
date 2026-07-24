@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+	<title>ThePhish Analysis</title>
+	<link rel="icon" type="image/png" sizes="1000x999" href="{{ url_for('web.static', filename='assets/img/logo_rounded.png') }}">
+	<link rel="stylesheet" href="{{ url_for('web.static', filename='assets/bootstrap/css/bootstrap.min.css') }}">
+	<link rel="stylesheet" href="{{ url_for('web.static', filename='assets/fonts/fonts.css') }}">
+	<link rel="stylesheet" href="{{ url_for('web.static', filename='assets/fonts/font-awesome.min.css') }}">
+	<link rel="stylesheet" href="{{ url_for('web.static', filename='assets/lib/animate.min.css') }}">
+	<link rel="stylesheet" href="{{ url_for('web.static', filename='assets/lib/aos.css') }}">
+	<link rel="stylesheet" href="{{ url_for('web.static', filename='assets/css/analysis.css') }}">
+</head>
+
+<body id="page-top" class="analysis-page" data-analysis-id="{{ analysis_id }}">
+	<div id="wrapper">
+		<nav class="navbar navbar-dark align-items-start sidebar sidebar-dark accordion bg-gradient-primary p-0 analysis-sidebar">
+			<div class="container d-flex flex-column p-0">
+				<hr class="sidebar-divider my-0">
+				<ul class="navbar-nav flex-column text-light analysis-sidebar-links" id="accordionSidebar">
+					<li class="nav-item"><a class="nav-link active" href="/"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/logo_rounded.png') }}" alt="ThePhish home"></a></li>
+					<li class="nav-item"><a class="nav-link" href="{{ webapp_thehive_url }}" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/thehive.png') }}" alt="TheHive"></a></li>
+					<li class="nav-item"><a class="nav-link" href="{{ webapp_cortex_url }}" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/cortex.png') }}" alt="Cortex"></a></li>
+					<li class="nav-item"><a class="nav-link" href="{{ webapp_misp_url }}" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/misp.png') }}" alt="MISP"></a></li>
+					<li class="nav-item mt-auto"><a class="nav-link" href="https://github.com/dead-plant/ThePhish-NG" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/github-logo.svg') }}" alt="ThePhish-NG on GitHub"></a></li>
+				</ul>
+			</div>
+		</nav>
+		<div class="d-flex flex-column analysis-content-wrapper" id="content-wrapper">
+			<main id="content" class="analysis-content">
+				<div class="analysis-main container-fluid">
+					<a href="/" class="analysis-brand" aria-label="Return to email listing">
+						<img class="img-fluid analysis-logo" src="{{ url_for('web.static', filename='assets/img/ThePhish_logo.png') }}" alt="ThePhish">
+					</a>
+					<div id="analysisStatus" class="analysis-status analysis-status-loading" role="status" aria-live="polite">Loading analysisâ€¦</div>
+					<div id="analysisAlert" class="alert d-none analysis-alert" role="alert"></div>
+					<section id="analysisLog" class="analysis-log" tabindex="0" aria-label="Analysis log">
+						<div id="analysisLogEntries" class="analysis-log-entries"></div>
+					</section>
+					<section id="analysisResult" class="analysis-result d-none" aria-live="polite">
+						<h1 id="analysisResultTitle" class="analysis-result-title"></h1>
+						<p id="analysisResultMessage" class="analysis-result-message"></p>
+					</section>
+					<a class="card-link btn btn-primary border rounded analysis-back-link" href="/">
+						<i class="fa fa-arrow-left" aria-hidden="true"></i>&nbsp; Go back to analyze a new e-mail
+					</a>
+				</div>
+			</main>
+			<footer class="bg-white sticky-footer">
+				<div class="container my-auto">
+					<div class="text-center my-auto copyright"><span>ThePhish-NG - a fork of <a href="https://github.com/emalderson/ThePhish" target="_blank" rel="noopener noreferrer">ThePhish</a> by emalderson.</span></div>
+				</div>
+			</footer>
+		</div>
+	</div>
+	<script src="{{ url_for('web.static', filename='assets/bootstrap/js/bootstrap.min.js') }}"></script>
+	<script src="{{ url_for('web.static', filename='assets/lib/aos.js') }}"></script>
+	<script src="{{ url_for('web.static', filename='assets/js/bs-init.js') }}"></script>
+	<script src="{{ url_for('web.static', filename='assets/js/theme.js') }}"></script>
+</body>
+
+</html>
