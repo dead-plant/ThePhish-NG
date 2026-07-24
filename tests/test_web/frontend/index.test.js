@@ -5,7 +5,12 @@ const test = require("node:test");
 
 const {
 	createIndexController,
+	createIndexView,
+	installIndexLifecycle,
 } = require("../../../app/web/static/assets/js/thephish.js");
+const {
+	createIndexDocument,
+} = require("./fake-dom.js");
 
 function jsonResponse(status, body) {
 	return {
@@ -21,8 +26,10 @@ function createView() {
 	return {
 		alerts: [],
 		analysisLoading: false,
+		analysisEndCount: 0,
 		emails: null,
 		listingLoading: false,
+		renderedEmails: [],
 		clearAlert() {},
 		showAlert(type, message) {
 			this.alerts.push({type, message});
@@ -35,6 +42,7 @@ function createView() {
 		},
 		renderEmails(emails, onAnalyze) {
 			this.emails = emails;
+			this.renderedEmails.push(emails);
 			this.onAnalyze = onAnalyze;
 		},
 		beginAnalysis() {
@@ -42,8 +50,17 @@ function createView() {
 		},
 		endAnalysis() {
 			this.analysisLoading = false;
+			this.analysisEndCount += 1;
 		},
 	};
+}
+
+function deferred() {
+	let resolve;
+	const promise = new Promise((promiseResolve) => {
+		resolve = promiseResolve;
+	});
+	return {promise, resolve};
 }
 
 test("listEmails fetches and renders the current email array", async () => {
@@ -175,4 +192,105 @@ test("startAnalysis restores the index and displays API or fallback errors", asy
 	assert.deepEqual(networkView.alerts, [
 		{type: "error", message: "The analysis could not be started. Please try again later."},
 	]);
+});
+
+test("a superseded email request cannot overwrite the current listing state", async () => {
+	const firstResponse = deferred();
+	const secondResponse = deferred();
+	const responses = [firstResponse.promise, secondResponse.promise];
+	const view = createView();
+	const controller = createIndexController({
+		fetchFn: async () => responses.shift(),
+		navigate() {},
+		view,
+	});
+
+	const firstRequest = controller.listEmails();
+	const secondRequest = controller.listEmails();
+	firstResponse.resolve(jsonResponse(200, [{uid: 1, subject: "stale"}]));
+	await firstRequest;
+
+	assert.deepEqual(view.renderedEmails, []);
+	assert.equal(view.listingLoading, true);
+
+	secondResponse.resolve(jsonResponse(200, [{uid: 2, subject: "current"}]));
+	await secondRequest;
+
+	assert.deepEqual(view.emails, [{uid: 2, subject: "current"}]);
+	assert.equal(view.listingLoading, false);
+});
+
+test("disposing the index suppresses a pending analysis completion", async () => {
+	const response = deferred();
+	const destinations = [];
+	const view = createView();
+	const controller = createIndexController({
+		fetchFn: async () => response.promise,
+		navigate(destination) {
+			destinations.push(destination);
+		},
+		view,
+	});
+
+	const pending = controller.startAnalysis(42);
+	controller.dispose();
+	response.resolve(jsonResponse(202, {analysis_id: "late", status: "pending"}));
+	await pending;
+
+	assert.deepEqual(destinations, []);
+	assert.equal(view.analysisEndCount, 0);
+	assert.deepEqual(view.alerts, []);
+});
+
+test("index lifecycle disposes on pagehide and reloads a persisted page", () => {
+	const listeners = new Map();
+	let disposed = 0;
+	let reloads = 0;
+	const fakeWindow = {
+		addEventListener(name, listener) {
+			listeners.set(name, listener);
+		},
+		location: {
+			reload() {
+				reloads += 1;
+			},
+		},
+	};
+
+	installIndexLifecycle(fakeWindow, {
+		dispose() {
+			disposed += 1;
+		},
+	});
+	listeners.get("pagehide")();
+	listeners.get("pageshow")({persisted: false});
+	listeners.get("pageshow")({persisted: true});
+
+	assert.equal(disposed, 1);
+	assert.equal(reloads, 1);
+});
+
+test("index DOM adapter renders API text literally in cells and alerts", () => {
+	const {document, elements, tableBody} = createIndexDocument();
+	const view = createIndexView(document);
+	const markup = '<img src=x onerror="alert(1)">';
+
+	view.renderEmails([{
+		uid: 7,
+		date: "today",
+		sender: markup,
+		subject: "<script>subject</script>",
+		body: "<b>body</b>",
+		attached_subject: "<i>attachment</i>",
+	}], () => {});
+	view.showAlert("error", markup);
+
+	const row = tableBody.rows[0];
+	assert.equal(row.children[2].textContent, markup);
+	assert.equal(row.children[2].children.length, 0);
+	assert.equal(row.children[3].textContent, "<script>subject</script>");
+	const alert = elements.cardHeader.querySelector(".operation-alert");
+	const strong = alert.children[1];
+	assert.equal(strong.textContent, markup);
+	assert.equal(strong.children.length, 0);
 });

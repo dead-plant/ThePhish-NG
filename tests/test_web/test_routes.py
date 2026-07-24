@@ -29,7 +29,7 @@ def test_analysis_page_renders_layout_and_configured_links(client, monkeypatch):
     assert response.status_code == 200
     page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
     assert page.body["data-analysis-id"] == "aid123"
-    assert page.select_one("#analysisStatus") is not None
+    assert page.select_one("#analysisStatus").get_text() == "Loading analysis…"
     assert page.select_one("#analysisAlert") is not None
     assert page.select_one("#analysisLog") is not None
     assert page.select_one("#analysisLogEntries") is not None

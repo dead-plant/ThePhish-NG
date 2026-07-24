@@ -39,12 +39,37 @@
 	}
 
 	function createIndexController({fetchFn, navigate, view}) {
+		let disposed = false;
+		let generation = 0;
+
+		function beginOperation() {
+			if (disposed) {
+				return null;
+			}
+			generation += 1;
+			return generation;
+		}
+
+		function isCurrent(operation) {
+			return !disposed && operation === generation;
+		}
+
 		async function listEmails() {
+			const operation = beginOperation();
+			if (operation === null) {
+				return;
+			}
 			view.clearAlert();
 			view.beginListing();
 			try {
 				const response = await fetchFn("/api/emails");
+				if (!isCurrent(operation)) {
+					return;
+				}
 				const emails = await readJson(response, listFallback);
+				if (!isCurrent(operation)) {
+					return;
+				}
 				if (!Array.isArray(emails)) {
 					throw new DisplayError(listFallback);
 				}
@@ -53,17 +78,26 @@
 					view.showAlert("warning", "There are no emails to read.");
 				}
 			} catch (error) {
+				if (!isCurrent(operation)) {
+					return;
+				}
 				view.renderEmails([], startAnalysis);
 				view.showAlert(
 					"error",
 					error instanceof DisplayError ? error.message : listFallback,
 				);
 			} finally {
-				view.endListing();
+				if (isCurrent(operation)) {
+					view.endListing();
+				}
 			}
 		}
 
 		async function startAnalysis(mailUid) {
+			const operation = beginOperation();
+			if (operation === null) {
+				return;
+			}
 			view.clearAlert();
 			const normalizedUid = normalizeMailUid(mailUid);
 			if (normalizedUid === null) {
@@ -78,12 +112,21 @@
 					headers: {"Content-Type": "application/json"},
 					body: JSON.stringify({mail_uid: normalizedUid}),
 				});
+				if (!isCurrent(operation)) {
+					return;
+				}
 				const state = await readJson(response, analysisFallback, 202);
+				if (!isCurrent(operation)) {
+					return;
+				}
 				if (!state || typeof state.analysis_id !== "string" || !state.analysis_id.trim()) {
 					throw new DisplayError(analysisFallback);
 				}
 				navigate(`/analysis/${encodeURIComponent(state.analysis_id)}`);
 			} catch (error) {
+				if (!isCurrent(operation)) {
+					return;
+				}
 				view.endAnalysis();
 				view.showAlert(
 					"error",
@@ -92,7 +135,12 @@
 			}
 		}
 
-		return {listEmails, startAnalysis};
+		function dispose() {
+			disposed = true;
+			generation += 1;
+		}
+
+		return {listEmails, startAnalysis, dispose};
 	}
 
 	function createIndexView(document) {
@@ -220,6 +268,15 @@
 		};
 	}
 
+	function installIndexLifecycle(window, controller) {
+		window.addEventListener("pagehide", () => controller.dispose());
+		window.addEventListener("pageshow", (event) => {
+			if (event.persisted) {
+				window.location.reload();
+			}
+		});
+	}
+
 	function boot(window) {
 		const view = createIndexView(window.document);
 		const controller = createIndexController({
@@ -229,6 +286,7 @@
 		});
 		window.document.getElementById("listMailsBtn")
 			.addEventListener("click", controller.listEmails);
+		installIndexLifecycle(window, controller);
 	}
 
 	if (typeof window !== "undefined" && window.document) {
@@ -238,6 +296,7 @@
 	return {
 		createIndexController,
 		createIndexView,
+		installIndexLifecycle,
 		normalizeMailUid,
 	};
 });

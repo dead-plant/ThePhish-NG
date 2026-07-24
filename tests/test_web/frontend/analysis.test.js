@@ -5,8 +5,13 @@ const test = require("node:test");
 
 const {
 	createAnalysisController,
+	createAnalysisView,
+	installAnalysisLifecycle,
 	normalizeLogEntry,
 } = require("../../../app/web/static/assets/js/analysis.js");
+const {
+	createAnalysisDocument,
+} = require("./fake-dom.js");
 
 function jsonResponse(status, body) {
 	return {
@@ -279,4 +284,56 @@ test("malformed log entries are rejected while valid text is preserved", () => {
 		normalizeLogEntry({seq: 2, timestamp: "now", level: "odd", message: "<script>"}),
 		{seq: 2, timestamp: "now", level: "odd", message: "<script>"},
 	);
+});
+
+test("analysis lifecycle reloads when a disposed page returns from BFCache", () => {
+	const listeners = new Map();
+	let disposed = 0;
+	let reloads = 0;
+	const fakeWindow = {
+		addEventListener(name, listener) {
+			listeners.set(name, listener);
+		},
+		location: {
+			reload() {
+				reloads += 1;
+			},
+		},
+	};
+
+	installAnalysisLifecycle(fakeWindow, {
+		dispose() {
+			disposed += 1;
+		},
+	});
+	listeners.get("pagehide")();
+	listeners.get("pageshow")({persisted: false});
+	listeners.get("pageshow")({persisted: true});
+
+	assert.equal(disposed, 1);
+	assert.equal(reloads, 1);
+});
+
+test("analysis log view allowlists CSS levels and renders API text literally", () => {
+	const {document, elements} = createAnalysisDocument();
+	const view = createAnalysisView(document);
+	const message = '<img src=x onerror="alert(1)">';
+
+	for (const [seq, level] of ["info", "warning", "error"].entries()) {
+		view.insertLogEntry({seq, level, message});
+	}
+	view.insertLogEntry({seq: 3, level: "unknown d-none", message});
+
+	const lines = elements.analysisLogEntries.children;
+	assert.deepEqual(
+		lines.map((line) => line.className),
+		[
+			"analysis-log-line analysis-log-info",
+			"analysis-log-line analysis-log-warning",
+			"analysis-log-line analysis-log-error",
+			"analysis-log-line analysis-log-neutral",
+		],
+	);
+	assert.equal(lines[3].textContent, `[UNKNOWN D-NONE]: ${message}`);
+	assert.equal(lines[3].children.length, 0);
 });

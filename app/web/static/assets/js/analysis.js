@@ -13,6 +13,11 @@
 	const activeStatuses = new Set(["pending", "running"]);
 	const terminalStatuses = new Set(["finished", "failed"]);
 	const verdicts = new Set(["Safe", "Suspicious", "Malicious"]);
+	const logLevelClasses = new Map([
+		["info", "analysis-log-info"],
+		["warning", "analysis-log-warning"],
+		["error", "analysis-log-error"],
+	]);
 	const loadFallback = "The analysis could not be loaded. Please try again later.";
 	const failureFallback = "The analysis failed without a recorded error.";
 
@@ -260,7 +265,8 @@
 		function insertLogEntry(entry) {
 			const line = document.createElement("div");
 			const normalizedLevel = entry.level.toLowerCase();
-			line.className = `analysis-log-line analysis-log-${normalizedLevel}`;
+			const levelClass = logLevelClasses.get(normalizedLevel) || "analysis-log-neutral";
+			line.className = `analysis-log-line ${levelClass}`;
 			line.dataset.seq = String(entry.seq);
 			line.textContent = `[${entry.level.toUpperCase()}]: ${entry.message}`;
 			const next = Array.from(entries.children).find(
@@ -319,6 +325,15 @@
 		};
 	}
 
+	function installAnalysisLifecycle(window, controller) {
+		window.addEventListener("pagehide", () => controller.dispose());
+		window.addEventListener("pageshow", (event) => {
+			if (event.persisted) {
+				window.location.reload();
+			}
+		});
+	}
+
 	function boot(window) {
 		const controller = createAnalysisController({
 			analysisId: window.document.body.dataset.analysisId,
@@ -326,7 +341,7 @@
 			EventSourceCtor: window.EventSource,
 			view: createAnalysisView(window.document),
 		});
-		window.addEventListener("pagehide", controller.dispose, {once: true});
+		installAnalysisLifecycle(window, controller);
 		controller.load();
 	}
 
@@ -337,6 +352,7 @@
 	return {
 		createAnalysisController,
 		createAnalysisView,
+		installAnalysisLifecycle,
 		normalizeLogEntry,
 	};
 });
