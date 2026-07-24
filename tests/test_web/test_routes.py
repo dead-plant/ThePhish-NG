@@ -93,3 +93,22 @@ def test_index_application_script_contains_no_xhr():
 
     assert "XMLHttpRequest" not in script
     assert "window.fetch.bind(window)" in script
+
+
+def test_analysis_page_loads_analysis_controller(client, monkeypatch):
+    _set_webapp_links(monkeypatch)
+
+    response = client.get("/analysis/aid123")
+
+    page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+    script = page.select_one('script[src$="/static/assets/js/analysis.js"]')
+    assert script is not None
+
+
+def test_analysis_controller_uses_text_rendering_and_no_xhr():
+    script = Path("app/web/static/assets/js/analysis.js").read_text(encoding="utf-8")
+
+    assert "XMLHttpRequest" not in script
+    assert ".innerHTML" not in script
+    assert ".textContent" in script
+    assert "new EventSourceCtor" in script
