@@ -125,7 +125,8 @@ class FakeElement {
 }
 
 class FakeDocument {
-	constructor(elements = {}) {
+	constructor(elements = {}, defaultView = null) {
+		this.defaultView = defaultView;
 		this.elements = elements;
 	}
 
@@ -138,7 +139,7 @@ class FakeDocument {
 	}
 }
 
-function createAnalysisDocument() {
+function createAnalysisDocument({requestAnimationFrame} = {}) {
 	const elements = {
 		analysisStatus: new FakeElement(),
 		analysisAlert: new FakeElement(),
@@ -148,8 +149,9 @@ function createAnalysisDocument() {
 		analysisResultTitle: new FakeElement(),
 		analysisResultMessage: new FakeElement(),
 	};
+	const defaultView = requestAnimationFrame ? {requestAnimationFrame} : null;
 	return {
-		document: new FakeDocument(elements),
+		document: new FakeDocument(elements, defaultView),
 		elements,
 	};
 }

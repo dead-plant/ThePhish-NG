@@ -53,10 +53,12 @@ class FakeEventSource {
 
 function createView() {
 	return {
+		actions: [],
 		alert: null,
 		connectionWarning: false,
 		entries: [],
 		failure: null,
+		nearBottom: true,
 		statuses: [],
 		verdict: null,
 		clearAlert() {
@@ -70,14 +72,22 @@ function createView() {
 			this.entries.sort((left, right) => left.seq - right.seq);
 		},
 		isLogNearBottom() {
-			return true;
+			this.actions.push("check-tail");
+			return this.nearBottom;
 		},
-		scrollLogToBottom() {},
+		scrollLogToBottom() {
+			this.actions.push("scroll-now");
+		},
+		scrollLogToBottomAfterLayout() {
+			this.actions.push("scroll-after-layout");
+		},
 		showVerdict(verdict) {
 			this.verdict = verdict;
+			this.actions.push(`verdict:${verdict}`);
 		},
 		showFailure(message) {
 			this.failure = message;
+			this.actions.push("failure");
 		},
 		showFatalError(message) {
 			this.alert = message;
@@ -199,6 +209,10 @@ test("finished direct load renders sorted history and verdict without a stream",
 	assert.deepEqual(view.entries.map((entry) => entry.seq), [0, 1]);
 	assert.equal(view.verdict, "Safe");
 	assert.deepEqual(view.statuses, ["loading", "finished"]);
+	assert.deepEqual(
+		view.actions.slice(-3),
+		["check-tail", "verdict:Safe", "scroll-after-layout"],
+	);
 	assert.equal(FakeEventSource.instances.length, 0);
 });
 
@@ -231,10 +245,39 @@ test("running load follows SSE, de-duplicates replay, reconnects, and closes on 
 	source.emit("open");
 	assert.equal(view.connectionWarning, false);
 
+	view.actions = [];
 	source.emit("status", {type: "status", status: "finished", verdict: "Malicious"});
 	assert.equal(source.closed, true);
 	assert.equal(view.verdict, "Malicious");
 	assert.equal(view.statuses.at(-1), "finished");
+	assert.deepEqual(
+		view.actions,
+		["check-tail", "verdict:Malicious", "scroll-after-layout"],
+	);
+});
+
+test("terminal status preserves a manually scrolled live log position", async () => {
+	FakeEventSource.instances = [];
+	const view = createView();
+	const controller = createAnalysisController({
+		analysisId: "manual-scroll",
+		fetchFn: fetchSequence([
+			jsonResponse(200, {status: "running"}),
+			jsonResponse(200, []),
+		], []),
+		EventSourceCtor: FakeEventSource,
+		view,
+	});
+
+	await controller.load();
+	view.nearBottom = false;
+	view.actions = [];
+	FakeEventSource.instances[0].emit(
+		"status",
+		{type: "status", status: "finished", verdict: "Safe"},
+	);
+
+	assert.deepEqual(view.actions, ["check-tail", "verdict:Safe"]);
 });
 
 test("failed direct load shows persisted error and never opens a stream", async () => {
@@ -254,6 +297,10 @@ test("failed direct load shows persisted error and never opens a stream", async 
 
 	assert.equal(view.failure, "Analyzer service failed");
 	assert.equal(view.statuses.at(-1), "failed");
+	assert.deepEqual(
+		view.actions.slice(-3),
+		["check-tail", "failure", "scroll-after-layout"],
+	);
 	assert.equal(FakeEventSource.instances.length, 0);
 });
 
@@ -336,4 +383,23 @@ test("analysis log view allowlists CSS levels and renders API text literally", (
 	);
 	assert.equal(lines[3].textContent, `[UNKNOWN D-NONE]: ${message}`);
 	assert.equal(lines[3].children.length, 0);
+});
+
+test("analysis view defers terminal scrolling until the next layout frame", () => {
+	const frames = [];
+	const {document, elements} = createAnalysisDocument({
+		requestAnimationFrame(callback) {
+			frames.push(callback);
+		},
+	});
+	const view = createAnalysisView(document);
+	elements.analysisLog.scrollHeight = 720;
+	elements.analysisLog.scrollTop = 120;
+
+	view.scrollLogToBottomAfterLayout();
+
+	assert.equal(elements.analysisLog.scrollTop, 120);
+	assert.equal(frames.length, 1);
+	frames.shift()();
+	assert.equal(elements.analysisLog.scrollTop, 720);
 });

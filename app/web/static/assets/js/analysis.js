@@ -96,6 +96,7 @@
 			if (disposed) {
 				return;
 			}
+			const followTail = view.isLogNearBottom();
 			closeStream();
 			if (state.status === "finished") {
 				if (!verdicts.has(state.verdict)) {
@@ -105,6 +106,9 @@
 				}
 				view.setStatus("finished");
 				view.showVerdict(state.verdict);
+				if (followTail) {
+					view.scrollLogToBottomAfterLayout();
+				}
 				return;
 			}
 			view.setStatus("failed");
@@ -113,6 +117,9 @@
 					? state.error
 					: failureFallback,
 			);
+			if (followTail) {
+				view.scrollLogToBottomAfterLayout();
+			}
 		}
 
 		function applyState(state) {
@@ -283,6 +290,17 @@
 			log.scrollTop = log.scrollHeight;
 		}
 
+		function scrollLogToBottomAfterLayout() {
+			if (
+				document.defaultView
+				&& typeof document.defaultView.requestAnimationFrame === "function"
+			) {
+				document.defaultView.requestAnimationFrame(scrollLogToBottom);
+				return;
+			}
+			scrollLogToBottom();
+		}
+
 		function showVerdict(verdict) {
 			result.className = `analysis-result analysis-result-${verdict.toLowerCase()}`;
 			resultTitle.textContent = verdict.toUpperCase();
@@ -317,6 +335,7 @@
 			insertLogEntry,
 			isLogNearBottom,
 			scrollLogToBottom,
+			scrollLogToBottomAfterLayout,
 			showVerdict,
 			showFailure,
 			showFatalError,
