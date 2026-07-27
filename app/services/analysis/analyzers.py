@@ -239,21 +239,6 @@ class AnalyzerRunner:
         cortex_id = config.get_app_config()["thehive"]["cortex_id"]
         jobs = [{"artifact_id": record.observable.observable_id, "analyzer_id": record.analyzer_id} for record in records]
 
-        # TODO: Bulk creation of analyzer jobs
-        """
-        try:
-            created = thehive.bulk_create_analyzer_jobs(cortex_id, jobs)
-            if len(created) != len(records):
-                raise TheHiveApiError(f"Bulk job creation returned {len(created)} job(s) for {len(records)} request(s)")
-            for record, job in zip(records, created):
-                record.job_id = job["_id"]
-            self._events.info(f"Started {len(records)} analyzer job(s)")
-            return
-        except (TheHiveApiError, ValueError) as exc:
-            log.info("Bulk analyzer job creation is unavailable, falling back to individual jobs (%s)", exc)
-            self._events.info("Bulk analyzer job creation is unavailable; starting jobs individually")
-        """
-
         for record, job_input in zip(records, jobs):
             try:
                 record.job_id = thehive.create_analyzer_job(cortex_id, job_input)["_id"]
