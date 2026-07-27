@@ -1,0 +1,2 @@
+# Additional dependencies for running the test suite.
+pytest==9.1.1

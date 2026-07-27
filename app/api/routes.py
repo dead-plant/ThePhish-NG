@@ -1,52 +1,136 @@
-import json
 import logging
 
-import flask
-import markupsafe
+from flask import Response, jsonify, request
 
-from app.services import case_from_email, list_emails, run_analysis
-from app.utils.ws_logger import WebSocketLogger
+from app.api import api_bp
+from app.services import analysis, listing
 
 log = logging.getLogger(__name__)
 
-bp = flask.Blueprint("api", __name__, url_prefix="/api")
 
-socketio = None
+@api_bp.errorhandler(listing.ImapConnectionError)
+def handle_imap_connection_error(error):
+    log.error("Failed to list emails because the IMAP connection failed", exc_info=(type(error), error, error.__traceback__))
+    return jsonify(
+        success=False,
+        error={
+            "code": "imap_connection_failed",
+            "message": "An IMAP connection error occurred while trying to list emails. Please try again later.",
+        },
+    ), 503
 
-def init_routes(socketio_instance):
-	global socketio
-	socketio = socketio_instance
 
-@bp.route('/list', methods = ['GET'])
-def obtain_emails_to_analyze():
-	# Obtain the list of emails
-	emails_info = list_emails.main()
-	if emails_info is None:
-		return flask.make_response(json.dumps({'success': False}), 500)
+@api_bp.errorhandler(listing.ListEmailsError)
+def handle_list_emails_error(error):
+    log.error("Failed to list emails", exc_info=(type(error), error, error.__traceback__))
+    return jsonify(
+        success=False,
+        error={
+            "code": "internal_server_error",
+            "message": "An internal server error occurred while listing emails. Please try again later.",
+        },
+    ), 500
 
-	# Format and return
-	response = flask.jsonify(emails_info)
-	return response
 
-# Analyze the email and obtain the verdict
-@bp.route('/analysis', methods = ['POST'])
-def analyze_email():
-	# UID of the email to analyze and sid of the client obtained from the request
-	mail_uid = markupsafe.escape(flask.request.form.get("mailUID"))
-	sid_client = markupsafe.escape(flask.request.form.get("sid"))
+# Simple health endpoint
+@api_bp.route("/health")
+def health():
+    return jsonify(status="ok")
 
-	# Instantiate the object used for logging by the other modules
-	wsl = WebSocketLogger(socketio, sid_client)
 
-	# Call the modules used to create the case and run the analysis
-	new_case_id, external_from_field = case_from_email.main(wsl, mail_uid)
-	if new_case_id is None or external_from_field is None:
-		return flask.make_response(json.dumps({'success': False}), 500)
+@api_bp.route("/emails", methods=["GET"])
+def list_emails():
+    return jsonify(listing.list_emails())
 
-	verdict = run_analysis.main(wsl, new_case_id, external_from_field)
-	if verdict is None:
-		return flask.make_response(json.dumps({'success': False}), 500)
 
-	# Format response and return
-	response = flask.jsonify(verdict)
-	return response
+@api_bp.errorhandler(analysis.InvalidMailUidError)
+def handle_invalid_mail_uid_error(error):
+    log.debug("Rejected analysis request: %s", error)
+    return jsonify(
+        success=False,
+        error={
+            "code": "invalid_mail_uid",
+            "message": str(error),
+        },
+    ), 400
+
+
+@api_bp.errorhandler(analysis.AnalysisNotFoundError)
+def handle_analysis_not_found_error(error):
+    log.debug("Analysis not found: %s", error)
+    return jsonify(
+        success=False,
+        error={
+            "code": "analysis_not_found",
+            "message": "The requested analysis does not exist or has expired.",
+        },
+    ), 404
+
+
+@api_bp.errorhandler(analysis.AnalysisQueueError)
+def handle_analysis_queue_error(error):
+    log.error("Failed to queue an analysis", exc_info=(type(error), error, error.__traceback__))
+    return jsonify(
+        success=False,
+        error={
+            "code": "analysis_backend_unavailable",
+            "message": "The analysis could not be queued. Please try again later.",
+        },
+    ), 503
+
+
+@api_bp.errorhandler(analysis.AnalysisStorageError)
+def handle_analysis_storage_error(error):
+    log.error("Analysis state storage failed", exc_info=(type(error), error, error.__traceback__))
+    return jsonify(
+        success=False,
+        error={
+            "code": "analysis_storage_unavailable",
+            "message": "The analysis state storage is unavailable. Please try again later.",
+        },
+    ), 503
+
+
+@api_bp.errorhandler(analysis.AnalysisError)
+def handle_analysis_error(error):
+    log.error("Analysis request failed", exc_info=(type(error), error, error.__traceback__))
+    return jsonify(
+        success=False,
+        error={
+            "code": "internal_server_error",
+            "message": "An internal server error occurred. Please try again later.",
+        },
+    ), 500
+
+
+@api_bp.route("/analyses", methods=["POST"])
+def create_analysis():
+    payload = request.get_json(silent=True)
+    mail_uid = payload.get("mail_uid") if isinstance(payload, dict) else None
+    state = analysis.start_analysis(mail_uid)
+    return jsonify(state), 202
+
+
+@api_bp.route("/analyses/<analysis_id>", methods=["GET"])
+def get_analysis(analysis_id):
+    return jsonify(analysis.get_analysis(analysis_id))
+
+
+@api_bp.route("/analyses/<analysis_id>/log", methods=["GET"])
+def get_analysis_log(analysis_id):
+    return jsonify(analysis.get_analysis_log(analysis_id))
+
+
+@api_bp.route("/analyses/<analysis_id>/stream", methods=["GET"])
+def stream_analysis(analysis_id):
+    # raises AnalysisNotFoundError before streaming starts, so the 404 handler still applies
+    stream = analysis.stream_analysis_events(analysis_id)
+    return Response(
+        stream,
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )

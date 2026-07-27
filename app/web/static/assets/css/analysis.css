@@ -1,0 +1,168 @@
+.analysis-page,
+.analysis-page #wrapper,
+.analysis-content-wrapper {
+	min-height: 100vh;
+}
+
+.analysis-sidebar {
+	color: var(--bs-gray-dark);
+	background: linear-gradient(135deg, rgb(40, 106, 149) 0%, rgb(255, 255, 255) 100%), rgb(40, 106, 149);
+	max-width: 114px;
+}
+
+.analysis-sidebar-links {
+	height: calc(100vh - 1px);
+}
+
+.analysis-sidebar .nav-link {
+	max-width: 114px;
+}
+
+.analysis-content-wrapper {
+	width: 100%;
+}
+
+.analysis-content {
+	display: flex;
+	flex: 1 0 auto;
+}
+
+.analysis-main {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 1rem;
+	min-height: 0;
+	padding: 1rem 1.5rem;
+}
+
+.analysis-brand {
+	align-self: flex-start;
+	line-height: 0;
+}
+
+.analysis-logo {
+	width: min(360px, 58vw);
+	max-height: 110px;
+	object-fit: contain;
+	object-position: left center;
+}
+
+.analysis-status {
+	border-radius: .35rem;
+	color: #fff;
+	font-size: 1.2rem;
+	font-weight: 800;
+	padding: .7rem 1rem;
+	text-align: center;
+}
+
+.analysis-status-loading,
+.analysis-status-pending,
+.analysis-status-running {
+	background: rgb(54, 185, 204);
+}
+
+.analysis-status-finished {
+	background: rgb(28, 200, 138);
+}
+
+.analysis-status-failed,
+.analysis-status-unavailable {
+	background: rgb(231, 74, 59);
+}
+
+.analysis-alert {
+	margin: 0;
+}
+
+.analysis-log {
+	background: #31354a;
+	border: 3px solid #444445;
+	border-radius: .35rem;
+	color: #fff;
+	flex: 1 1 24rem;
+	min-height: 20rem;
+	overflow: auto;
+	padding: 1rem;
+}
+
+.analysis-log:focus {
+	box-shadow: 0 0 0 .25rem rgba(54, 185, 204, .35);
+	outline: 0;
+}
+
+.analysis-log-entries {
+	font-family: "Courier Prime", "Courier New", monospace;
+	font-size: 1rem;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.analysis-log-line {
+	color: #f8f9fc;
+}
+
+.analysis-log-warning {
+	color: #ffdc6a;
+}
+
+.analysis-log-error {
+	color: #ff8b80;
+}
+
+.analysis-result {
+	border-radius: .35rem;
+	overflow: hidden;
+	text-align: center;
+}
+
+.analysis-result-title {
+	color: #fff;
+	font-size: 1.35rem;
+	font-weight: 800;
+	margin: 0;
+	padding: .75rem 1rem;
+}
+
+.analysis-result-message {
+	background: rgb(227, 230, 240);
+	color: rgb(90, 92, 105);
+	font-size: 1.1rem;
+	margin: 0;
+	padding: 1.25rem;
+}
+
+.analysis-result-safe .analysis-result-title {
+	background: rgb(0, 166, 90);
+}
+
+.analysis-result-suspicious .analysis-result-title {
+	background: rgb(246, 194, 62);
+}
+
+.analysis-result-malicious .analysis-result-title,
+.analysis-result-failed .analysis-result-title {
+	background: rgb(221, 75, 57);
+}
+
+.analysis-back-link {
+	align-self: flex-start;
+	background: rgb(40, 106, 149);
+	font-size: 1.1rem;
+}
+
+@media (max-width: 767.98px) {
+	.analysis-main {
+		padding: .75rem;
+	}
+
+	.analysis-logo {
+		width: min(280px, 70vw);
+	}
+
+	.analysis-log {
+		min-height: 17rem;
+	}
+}

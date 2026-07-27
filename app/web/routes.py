@@ -1,21 +1,30 @@
-import logging
+from flask import render_template
 
-import flask
-from app.utils import config as config_utils
+from app import config
+from app.web import web_bp
 
-log = logging.getLogger(__name__)
 
-bp = flask.Blueprint("web", __name__, template_folder="templates", static_folder="static")
+def _webapp_context() -> dict[str, str | None]:
+    """Return configured external-service links used by web templates."""
+    webapp = config.get_app_config()["webapp"]
+    return {
+        "webapp_thehive_url": webapp.get("thehive_url"),
+        "webapp_cortex_url": webapp.get("cortex_url"),
+        "webapp_misp_url": webapp.get("misp_url"),
+    }
 
-def init_routes():
-	pass
 
-# The main page
-@bp.route("/")
-def homepage():
-	config = config_utils.get()
-	thehive = config['web']['navbar']['thehive']
-	cortex = config['web']['navbar']['cortex']
-	misp = config['web']['navbar']['misp']
+@web_bp.route("/")
+def index():
+    """Render the email-listing page."""
+    return render_template("index.html", **_webapp_context())
 
-	return flask.render_template("index.html", conf_web_navbar_thehive=thehive, conf_web_navbar_cortex=cortex, conf_web_navbar_misp=misp)
+
+@web_bp.route("/analysis/<analysis_id>")
+def analysis_page(analysis_id: str):
+    """Render a persistent analysis view; the browser loads API state."""
+    return render_template(
+        "analysis.html",
+        analysis_id=analysis_id,
+        **_webapp_context(),
+    )

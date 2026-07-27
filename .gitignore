@@ -2,6 +2,11 @@ nogit.*
 .venv/
 config/
 __pycache__/
+.coverage
+.worktrees/
+.pytest*
+pytest-cache*
+/docs/superpowers/
 
 HELP.md
 target/

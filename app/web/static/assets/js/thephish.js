@@ -1,228 +1,302 @@
-// Obtain HTML DOM elements
-let desc_div = document.getElementById("descDiv");
-let div_data_table = document.getElementById("divDataTable");
-let data_table = document.getElementById("dataTable");
-let list_mails_btn = document.getElementById("listMailsBtn");
-let progress_bar = document.getElementById("progressBar");
-let card_header = document.getElementById("cardHeader");
-let div_result = document.getElementById("divResult");
-let card_body_table_res = document.getElementById("cardBodyTableRes");
-let go_back_link = document.getElementById("goBackLink");
-let log_text = document.getElementById("logText");
-let log_text_par = log_text.getElementsByTagName("p")[0]
-
-
-// Obtain the socket object
-// Automatically start a connection to window.location
-const socket = io();
-
-// Enable the "List emails" button once the connection is established and the SID is available
-socket.on("connect", () => {
-	list_mails_btn.classList.remove("disabled");
-});
-
-// Modify the DOM to append the received message and scroll the div
-socket.on("logInfo", data => {
-	log_text_par.innerHTML += "[INFO]: " + data + "<br/>";
-	updateScroll();
-});
-
-socket.on("logWarning", data => {
-	log_text_par.innerHTML += "[WARNING]: " + data + "<br/>";
-	updateScroll();
-});
-
-socket.on("logError", data => {
-	log_text_par.innerHTML += "[ERROR]: " + data + "<br/>";
-	updateScroll();
-});
-
-// Function that automatically scrolls the div when new logs are appended to it
-function updateScroll(){
-	log_text_par.parentNode.scrollTop = log_text_par.parentNode.scrollHeight;
-}
-
-// Function used to show an error or warning alert
-function showAlert(type){
-	let alert = document.createElement("div");
-	alert.setAttribute("role", "alert");
-	if(type === "error"){
-		alert.setAttribute("class", "alert alert-danger alert-dismissible");
-	} else if (type === "warning") {
-		alert.setAttribute("class", "alert alert-warning alert-dismissible");
+(function(root, factory) {
+	"use strict";
+	const api = factory();
+	if (typeof module === "object" && module.exports) {
+		module.exports = api;
 	}
-	alert.setAttribute("style", "text-align: left;margin-top: 15px;margin-bottom: 0px;");
-	let close = document.createElement("Button");
-	close.setAttribute("type", "button");
-	close.setAttribute("class", "btn-close");
-	if(type === "error"){
-		close.setAttribute("onclick", "window.location.reload()");
+	if (root) {
+		root.ThePhishIndex = api;
 	}
-	close.setAttribute("data-bs-dismiss", "alert");
-	close.setAttribute("aria-label", "Close");
-	alert.appendChild(close);
-	let span = document.createElement("span");
-	if(type === "error"){
-		span.innerHTML="<strong>An error has occurred.</strong>";
-	} else if (type === "warning") {
-		span.innerHTML="<strong>There are no e-mails to read.</strong>";
+})(typeof window !== "undefined" ? window : null, function() {
+	"use strict";
+
+	const listFallback = "An unexpected error occurred while listing emails. Please try again later.";
+	const analysisFallback = "The analysis could not be started. Please try again later.";
+
+	class DisplayError extends Error {}
+
+	async function readJson(response, fallbackMessage, expectedStatus) {
+		let body;
+		try {
+			body = await response.json();
+		} catch (_error) {
+			throw new DisplayError(fallbackMessage);
+		}
+		if (!response.ok || (expectedStatus !== undefined && response.status !== expectedStatus)) {
+			const message = body && body.error && typeof body.error.message === "string"
+				? body.error.message
+				: fallbackMessage;
+			throw new DisplayError(message);
+		}
+		return body;
 	}
-	alert.appendChild(span);
-	document.getElementById("cardHeader").appendChild(alert);
-}
 
-// Function called when the "List emails" button is clicked
-function list_emails(){
-	// Modify the DOM to show the progress bar
-	data_table.tBodies[0].innerHTML="";
-	div_data_table.classList.add("d-none");
-	list_mails_btn.classList.add("d-none");
-	progress_bar.classList.remove("d-none");
-	progress_bar.firstElementChild.classList.add("progress-bar-animated");
-	progress_bar.firstElementChild.innerHTML = "<strong>Retrieving emails...</strong>";
-	// Prepare the AJAX GET request to the path /api/list
-	let xhr = new XMLHttpRequest();
-	xhr.open('GET', '/api/list', true);
-	// Function called when the response is available
-	xhr.onreadystatechange = function() {
-		if(xhr.readyState == 4) {
-			if(xhr.status == 200) {
-				let response = JSON.parse(xhr.responseText);
-				if (response == null){	  
-					// Handle errors during the execution	   
-					showAlert("error");
-					progress_bar.firstElementChild.classList.remove("bg-info");
-					progress_bar.firstElementChild.classList.add("bg-danger");
-					progress_bar.firstElementChild.classList.remove("progress-bar-animated");
-					progress_bar.firstElementChild.innerHTML="<strong>Error</strong>";
-				} else if(response.length == 0){
-					// Handle empty list of emails
-					showAlert("warning");
-					list_mails_btn.classList.remove("d-none");
-					progress_bar.classList.add("d-none");
-					progress_bar.firstElementChild.classList.remove("progress-bar-animated");
-				} else {
-					// Modify DOM to add the emails to a table
-					for(element of response){
-						let row = document.createElement("tr");
-						let td_uid = document.createElement("td"); 
-						td_uid.appendChild(document.createTextNode(element.mailUID));
-						row.appendChild(td_uid);
-						let td_date = document.createElement("td"); 
-						td_date.appendChild(document.createTextNode(element.date));
-						row.appendChild(td_date); 
-						let td_from = document.createElement("td"); 
-						td_from.appendChild(document.createTextNode(element.from));
-						row.appendChild(td_from); 
-						let td_subject = document.createElement("td"); 
-						td_subject.appendChild(document.createTextNode(element.subject));
-						row.appendChild(td_subject);
-						let td_body = document.createElement("td"); 
-						td_body.appendChild(document.createTextNode(element.body));  
-						row.appendChild(td_body); 
-						let td_attachment = document.createElement("td"); 
-						td_attachment.appendChild(document.createTextNode(element.attachedMail));
-						row.appendChild(td_attachment); 
-						let td_button = document.createElement("td"); 
-						td_button.setAttribute("class", "justify-content-xl-end");
-						let button = document.createElement("button");
-						button.setAttribute("class", "btn btn-primary border rounded");
-						button.setAttribute("type", "button");
-						button.setAttribute("style", "background: rgb(40,106,149);font-size: 20px;");
-						button.setAttribute("onclick", "analyze_email(this)");
-						button.appendChild(document.createTextNode("Analyze"));
-						td_button.appendChild(button);
-						row.appendChild(td_button);   
+	function normalizeMailUid(value) {
+		const uid = typeof value === "string" && /^\d+$/.test(value.trim())
+			? Number(value.trim())
+			: value;
+		return Number.isSafeInteger(uid) && uid > 0 ? uid : null;
+	}
 
-						data_table.tBodies[0].appendChild(row);
-						desc_div.classList.add("d-none");
-						div_data_table.classList.remove("d-none");
-						
-						list_mails_btn.classList.remove("d-none");
-						progress_bar.classList.add("d-none");
-						progress_bar.firstElementChild.classList.remove("progress-bar-animated");
-					}
+	function createIndexController({fetchFn, navigate, view}) {
+		let disposed = false;
+		let generation = 0;
+
+		function beginOperation() {
+			if (disposed) {
+				return null;
+			}
+			generation += 1;
+			return generation;
+		}
+
+		function isCurrent(operation) {
+			return !disposed && operation === generation;
+		}
+
+		async function listEmails() {
+			const operation = beginOperation();
+			if (operation === null) {
+				return;
+			}
+			view.clearAlert();
+			view.beginListing();
+			try {
+				const response = await fetchFn("/api/emails");
+				if (!isCurrent(operation)) {
+					return;
+				}
+				const emails = await readJson(response, listFallback);
+				if (!isCurrent(operation)) {
+					return;
+				}
+				if (!Array.isArray(emails)) {
+					throw new DisplayError(listFallback);
+				}
+				view.renderEmails(emails, startAnalysis);
+				if (emails.length === 0) {
+					view.showAlert("warning", "There are no emails to read.");
+				}
+			} catch (error) {
+				if (!isCurrent(operation)) {
+					return;
+				}
+				view.renderEmails([], startAnalysis);
+				view.showAlert(
+					"error",
+					error instanceof DisplayError ? error.message : listFallback,
+				);
+			} finally {
+				if (isCurrent(operation)) {
+					view.endListing();
 				}
 			}
-			else {
-				// Handle errors during the execution
-				showAlert("error");
-				progress_bar.firstElementChild.classList.remove("bg-info");
-				progress_bar.firstElementChild.classList.add("bg-danger");
-				progress_bar.firstElementChild.classList.remove("progress-bar-animated");
-				progress_bar.firstElementChild.innerHTML="<strong>Error</strong>";
-			}
 		}
-	}
-	// Send the request
-	xhr.send(null);
-}
 
+		async function startAnalysis(mailUid) {
+			const operation = beginOperation();
+			if (operation === null) {
+				return;
+			}
+			view.clearAlert();
+			const normalizedUid = normalizeMailUid(mailUid);
+			if (normalizedUid === null) {
+				view.showAlert("error", analysisFallback);
+				return;
+			}
 
-// Function called when the "Analyze" button is clicked for an email
-// The button node is used to obtain the index of the table row on which the button has been clicked
-function analyze_email(thisBtn){
-
-	let index = thisBtn.parentNode.parentNode.rowIndex;
-	let uid_field = data_table.tBodies[0].rows[index-1].cells[0].innerHTML;
-	
-	// Modify the DOM to show the progress bar and the div used to show the logs
-	list_mails_btn.classList.add("d-none");
-	div_data_table.classList.add("d-none");
-	progress_bar.classList.remove("d-none");
-	progress_bar.firstElementChild.classList.add("progress-bar-animated");
-	progress_bar.firstElementChild.innerHTML = "<strong>Analyzing...</strong>";
-	log_text.classList.remove("d-none")
-	// Prepare the AJAX POST request to the path /api/analysis
-	let xhr = new XMLHttpRequest();
-	xhr.open('POST', '/api/analysis', true);
-	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-	// Function called when the response is available
-	xhr.onreadystatechange = function() {
-		if(xhr.readyState == 4) {
-			if(xhr.status == 200) {
-				let response = JSON.parse(xhr.responseText);
-				if (response == null){
-					// Handle errors during the execution
-					showAlert("error");
-					progress_bar.firstElementChild.classList.remove("bg-info");
-					progress_bar.firstElementChild.classList.add("bg-danger");
-					progress_bar.firstElementChild.classList.remove("progress-bar-animated");
-					progress_bar.firstElementChild.innerHTML="<strong>Error</strong>";
-				} else {
-					// Modify the DOM to show the result
-					card_body_table_res.classList.remove("d-none");
-					progress_bar.firstElementChild.classList.remove("bg-info");
-					progress_bar.firstElementChild.classList.add("bg-success");
-					progress_bar.firstElementChild.classList.remove("progress-bar-animated");
-					progress_bar.firstElementChild.innerHTML="<strong>Success</strong>";
-					go_back_link.classList.remove("d-none");
-					if (response == "Safe"){
-						div_result.getElementsByTagName("p")[0].style.background="rgba(0,166,90,255)";
-						div_result.getElementsByTagName("p")[0].innerHTML="<strong>SAFE</strong>";
-						div_result.getElementsByTagName("p")[1].innerHTML="<br/>The e-mail has been classified as SAFE. The case has been closed and the response has been sent.<br/>";
-					} else if (response == "Malicious"){
-						div_result.getElementsByTagName("p")[0].style.background="rgb(221,75,57)";
-						div_result.getElementsByTagName("p")[0].innerHTML="<strong>MALICIOUS</strong>";
-						div_result.getElementsByTagName("p")[1].innerHTML="<br/>The e-mail has been classified as MALICIOUS. The case has been closed, the submission on MISP has been made and the response has been sent.<br/>";
-					} else if (response == "Suspicious"){
-						div_result.getElementsByTagName("p")[0].style.background="rgb(255,212,37)";
-						div_result.getElementsByTagName("p")[0].innerHTML="<strong>SUSPICIOUS</strong>";
-						div_result.getElementsByTagName("p")[1].innerHTML="<br/>The e-mail has been classified as SUSPICIOUS. The case has been left open for further investigation. Please use the buttons on the left to review the result of the analysis, close the case and send a response.<br/>";
-					}
-					div_result.classList.remove("d-none");
+			view.beginAnalysis();
+			try {
+				const response = await fetchFn("/api/analyses", {
+					method: "POST",
+					headers: {"Content-Type": "application/json"},
+					body: JSON.stringify({mail_uid: normalizedUid}),
+				});
+				if (!isCurrent(operation)) {
+					return;
 				}
-			}
-			else {
-				// Handle errors during the execution
-				showAlert("error");
-				progress_bar.firstElementChild.classList.remove("bg-info");
-				progress_bar.firstElementChild.classList.add("bg-danger");
-				progress_bar.firstElementChild.classList.remove("progress-bar-animated");
-				progress_bar.firstElementChild.innerHTML="<strong>Error</strong>";
+				const state = await readJson(response, analysisFallback, 202);
+				if (!isCurrent(operation)) {
+					return;
+				}
+				if (!state || typeof state.analysis_id !== "string" || !state.analysis_id.trim()) {
+					throw new DisplayError(analysisFallback);
+				}
+				navigate(`/analysis/${encodeURIComponent(state.analysis_id)}`);
+			} catch (error) {
+				if (!isCurrent(operation)) {
+					return;
+				}
+				view.endAnalysis();
+				view.showAlert(
+					"error",
+					error instanceof DisplayError ? error.message : analysisFallback,
+				);
 			}
 		}
+
+		function dispose() {
+			disposed = true;
+			generation += 1;
+		}
+
+		return {listEmails, startAnalysis, dispose};
+	}
+
+	function createIndexView(document) {
+		const description = document.getElementById("descDiv");
+		const tableWrapper = document.getElementById("divDataTable");
+		const table = document.getElementById("dataTable");
+		const listButton = document.getElementById("listMailsBtn");
+		const progress = document.getElementById("progressBar");
+		const progressFill = progress.firstElementChild;
+		const cardHeader = document.getElementById("cardHeader");
+
+		function clearAlert() {
+			const alert = cardHeader.querySelector(".operation-alert");
+			if (alert) {
+				alert.remove();
+			}
+		}
+
+		function showAlert(type, message) {
+			clearAlert();
+			const alert = document.createElement("div");
+			alert.className = `operation-alert alert alert-${type === "warning" ? "warning" : "danger"} alert-dismissible`;
+			alert.setAttribute("role", "alert");
+			alert.style.cssText = "text-align: left;margin-top: 15px;margin-bottom: 0px;";
+
+			const close = document.createElement("button");
+			close.type = "button";
+			close.className = "btn-close";
+			close.setAttribute("data-bs-dismiss", "alert");
+			close.setAttribute("aria-label", "Close");
+			alert.appendChild(close);
+
+			const strong = document.createElement("strong");
+			strong.textContent = message;
+			alert.appendChild(strong);
+			cardHeader.appendChild(alert);
+		}
+
+		function showProgress(message) {
+			progress.classList.remove("d-none");
+			progressFill.classList.add("bg-info", "progress-bar-animated");
+			progressFill.classList.remove("bg-danger", "bg-success");
+			progressFill.textContent = message;
+		}
+
+		function hideProgress() {
+			progress.classList.add("d-none");
+			progressFill.classList.remove("progress-bar-animated");
+			progressFill.textContent = "";
+		}
+
+		function beginListing() {
+			table.tBodies[0].textContent = "";
+			tableWrapper.classList.add("d-none");
+			listButton.disabled = true;
+			listButton.classList.add("d-none");
+			showProgress("Retrieving emails…");
+		}
+
+		function endListing() {
+			listButton.disabled = false;
+			listButton.classList.remove("d-none");
+			hideProgress();
+		}
+
+		function renderEmails(emails, onAnalyze) {
+			table.tBodies[0].textContent = "";
+			if (emails.length === 0) {
+				tableWrapper.classList.add("d-none");
+				return;
+			}
+			for (const email of emails) {
+				const row = document.createElement("tr");
+				for (const field of ["uid", "date", "sender", "subject", "body", "attached_subject"]) {
+					const cell = document.createElement("td");
+					cell.textContent = email[field] == null ? "" : String(email[field]);
+					row.appendChild(cell);
+				}
+				const actionCell = document.createElement("td");
+				actionCell.className = "justify-content-xl-end";
+				const button = document.createElement("button");
+				button.className = "btn btn-primary border rounded analyze-email-btn";
+				button.type = "button";
+				button.style.cssText = "background: rgb(40,106,149);font-size: 20px;";
+				button.textContent = "Analyze";
+				button.addEventListener("click", () => onAnalyze(email.uid));
+				actionCell.appendChild(button);
+				row.appendChild(actionCell);
+				table.tBodies[0].appendChild(row);
+			}
+			description.classList.add("d-none");
+			tableWrapper.classList.remove("d-none");
+		}
+
+		function beginAnalysis() {
+			listButton.disabled = true;
+			listButton.classList.add("d-none");
+			tableWrapper.classList.add("d-none");
+			for (const button of table.querySelectorAll(".analyze-email-btn")) {
+				button.disabled = true;
+			}
+			showProgress("Starting analysis…");
+		}
+
+		function endAnalysis() {
+			listButton.disabled = false;
+			listButton.classList.remove("d-none");
+			if (table.tBodies[0].rows.length > 0) {
+				tableWrapper.classList.remove("d-none");
+			}
+			for (const button of table.querySelectorAll(".analyze-email-btn")) {
+				button.disabled = false;
+			}
+			hideProgress();
+		}
+
+		return {
+			clearAlert,
+			showAlert,
+			beginListing,
+			endListing,
+			renderEmails,
+			beginAnalysis,
+			endAnalysis,
+		};
+	}
+
+	function installIndexLifecycle(window, controller) {
+		window.addEventListener("pagehide", () => controller.dispose());
+		window.addEventListener("pageshow", (event) => {
+			if (event.persisted) {
+				window.location.reload();
+			}
+		});
+	}
+
+	function boot(window) {
+		const view = createIndexView(window.document);
+		const controller = createIndexController({
+			fetchFn: window.fetch.bind(window),
+			navigate: (destination) => window.location.assign(destination),
+			view,
+		});
+		window.document.getElementById("listMailsBtn")
+			.addEventListener("click", controller.listEmails);
+		installIndexLifecycle(window, controller);
+	}
+
+	if (typeof window !== "undefined" && window.document) {
+		window.document.addEventListener("DOMContentLoaded", () => boot(window));
+	}
+
+	return {
+		createIndexController,
+		createIndexView,
+		installIndexLifecycle,
+		normalizeMailUid,
 	};
-	// Send the request with the SID and the UID of the email
-	xhr.send("sid=" + socket.id + "&mailUID=" + uid_field);
-} 
+});

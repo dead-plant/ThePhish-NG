@@ -1,25 +1,23 @@
-{	
+{
+	"version": 1,
 	"exactMatching": {
 		"mail" : [],
 		"ip" : [
 			"127.0.0.1"
 		],
-		"url" : [],
+		"url" : [
+			"http://schemas.microsoft.com/office/2004/12/omml",
+			"https://schemas.microsoft.com/office/2004/12/omml",
+			"https://www.w3.org/TR/REC-html40"
+		],
 		"domain" : [
-            "schemas.microsoft.com"
+            "schemas.microsoft.com",
+			"www.w3.org"
         ],
 		"filename" : [],
 		"filetype" : [],
 		"hash" : []
 	},
-	"domainsInSubdomains" : [
-      	"prod.outlook.com",
-		"outlook.office365.com",
-		"eu.iphmx.com",
-		"protection.outlook.com"
-    ],
-	"domainsInURLs" : [],
-	"domainsInEmails" : [],
 	"regexMatching" : {
 		"mail" : [],
 		"ip" : [
