@@ -12,11 +12,11 @@ assignees: ''
 | Question                   | Answer                                       |
 |----------------------------|----------------------------------------------|
 | OS version                 | Debian 13, Ubuntu 22.04, CentOS, RedHat, ... |
-| OS-Virtualizazion          | No, KVM, Proxmox-lxc, Docker, ...            |
+| OS-Virtualizazion          | No, KVM, Proxmox-lxc, ...                    |
+| Docker?                    | yes / no                                     |
 | Dedicated RAM              | XX GB                                        |
 | vCPU                       | 2 / 4 / 8 / 16                               |
 | Python version             | 3.12, 3.13, ...                              |
-| Python venv?               | yes / no                                     |
 | E-Mail provider            | Gmail, Hotmail, Private Server, ...          |
 | Mail client type & version | Thunderbird, Gmail, ...                      |
 | Browser type & version     | Firefox, Chrome, Edge, Opera, ...            |
