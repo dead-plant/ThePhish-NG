@@ -22,7 +22,6 @@ It handles the full analysis flow from extracting observables, running the appli
 * [Additional Documentation](#additional-documentation)
 * [External References](#external-references)
 * [Highlighted Features](#highlighted-features)
-* [System Requirements](#system-requirements)
 * [Credits](#credits)
 * [License](#license)
 
@@ -48,10 +47,6 @@ It handles the full analysis flow from extracting observables, running the appli
 * Complete log and link to web view of the analysis in result email
 * More configuration options
 * No direct connection to cortex required
-
-## System Requirements
-
-
 
 ## Credits
 
