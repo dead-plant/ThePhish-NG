@@ -293,7 +293,7 @@ class CaseBuilder:
 
             # Attach the original email, so analyzers like Yara can scan it.
             try:
-                eml_path = _write_temp_file(tmp_dir, f"{subject or 'attached_email'}.eml", internal_msg.as_bytes())
+                eml_path = _write_temp_file(tmp_dir, f"{'email'}.eml", internal_msg.as_bytes())
                 thehive.create_file_observable(case_id=case_id, file_path=eml_path, tags=["email", EML_SAMPLE_TAG], message="Attached email in EML format")
                 self._events.info(f"Added the original email as file observable: {os.path.basename(eml_path)}")
             except (TheHiveApiError, ValueError, OSError) as exc:
