@@ -150,7 +150,7 @@ I will assume you already got the following setup. You may have to adjust the pa
 * DNS for `thephish.example.com` and `*.thephish.example.com` pointing to that IP-Address
 * You got a valid TLS certificate for both `thephish.example.com` and `*.thephish.example.com`
 * The certificate chain is at `/etc/letsencrypt/live/thephish.example.com/fullchain.pem` and the key at `/etc/letsencrypt/live/thephish.example.com/privkey.pem`
-* Services bound to these ports: ThePhish-NG: 127.0.0.1:8080, TheHive: 127.0.0.1:9000, Cortex: 127.0.0.1:9000, MISP: 127.0.0.1:9080
+* Services bound to these ports: ThePhish-NG: 127.0.0.1:8080, TheHive: 127.0.0.1:9000, Cortex: 127.0.0.1:9000, MISP: 127.0.0.1:9443
 
 ### Install Nginx using nginx.org repo
 
