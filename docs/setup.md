@@ -68,7 +68,7 @@ cd cortex
 bash ./scripts/init.sh
 sed -i '/^  nginx:$/a\    profiles: ["disabled"]' docker-compose.yml
 sed -i 's/# ports:/ports:/' docker-compose.yml
-sed -i "s/#   - '0.0.0.0:9001:9001'/  - '127.0.0.1:9001:9001'/" docker-compose.yml
+sed -i -E "s|^(\s*)(#\s)?(\s*)-\s*['\"][^'\"]*9001:9001['\"]\s*$|\1\3- '127.0.0.1:9001:9001'|" docker-compose.yml
 docker compose config >/dev/null
 cd ..
 
@@ -76,7 +76,7 @@ cd thehive
 bash ./scripts/init.sh
 sed -i '/^  nginx:$/a\    profiles: ["disabled"]' docker-compose.yml
 sed -i 's/# ports:/ports:/' docker-compose.yml
-sed -i "s/#   - '0.0.0.0:9000:9000'/  - '127.0.0.1:9000:9000'/" docker-compose.yml
+sed -i -E "s|^(\s*)(#\s)?(\s*)-\s*['\"][^'\"]*9000:9000['\"]\s*$|\1\3- '127.0.0.1:9000:9000'|" docker-compose.yml
 docker compose config >/dev/null
 cd ..
 ```
@@ -342,7 +342,8 @@ server {
         proxy_set_header X-Forwarded-Host  $host;
         
         add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains";
-        proxy_pass              http://127.0.0.1:9080/;
+        proxy_pass              https://127.0.0.1:9443/;
+        proxy_ssl_verify off;
         proxy_http_version      1.1;
     }
 }
@@ -397,11 +398,37 @@ sudo systemctl restart nginx
 
 ## Configure Services for ThePhish-NG
 
+This section assumes that the TheHive, Cortex and MISP webapps are reachable via their domains and that you created a default admin user with a secure password.
+
 ### Configure TheHive
 
 #### Request Community License
 
+Since TheHive version 5.3 you need to have a valid license. You get a 14-day Platinum trial license, and afterward you can request a free community license. I recommend you request the free license right away as the request will be reviewed by the StrangeBee team before you can use it.
+
+You can find a detailed tutorial on how to request and activate such a license on the StrangeBee website:
+
+* Request a Community License: https://docs.strangebee.com/thehive/installation/licenses/request-a-community-license/
+* Activate or Update a License: https://docs.strangebee.com/thehive/installation/licenses/license/
+
+#### Configure Cortex and MISP connection
+
+TODO
+
 ### Configure Cortex
+
+TODO
 
 ### Configure MISP
 
+TODO
+
+## Deploy ThePhish-NG
+
+### Deploy using docker compose
+
+TODO
+
+### Deploy natively
+
+TODO
