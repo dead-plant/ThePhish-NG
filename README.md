@@ -6,10 +6,10 @@
   </p>
 </div>
 
-ThePhish-NG is a partial rewrite of the original [ThePhish](https://github.com/emalderson/ThePhish) project with updated features and TheHive5 support.
+ThePhish-NG is a partial rewrite of the original [ThePhish](https://github.com/emalderson/ThePhish) project with updated features and TheHive 5 support.
 
-It offers a web application built with Python3 and Flask that automates phishing email analysis using TheHive, Cortex and MISP.
-It handles the full analysis flow from extracting observables, running the applicable analyzers, terminating the TheHive case with a verdict and exporting malicious cases to MISP. 
+It offers a web application built with Python 3 and Flask that automates phishing email analysis using TheHive, Cortex, and MISP.
+It handles the full analysis flow from extracting observables, running the applicable analyzers, closing the TheHive case with a verdict and exporting malicious cases to MISP. 
 
 [![OS](https://img.shields.io/badge/OS-Linux-red?style=flat&logo=linux)](#)
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python%203.12-1f425f.svg?logo=python)](https://www.python.org/)
@@ -41,12 +41,15 @@ It handles the full analysis flow from extracting observables, running the appli
 
 ## Highlighted Features
 
-* TheHive5 support
-* Built in Redirect Tracker and Outlook Safelink decoder for URL observables
-* View finished and running analyses in the browser with customizable retention time
-* Complete log and link to web view of the analysis in result email
-* More configuration options
-* No direct connection to cortex required
+* TheHive 5 support
+* Background analysis with live logs and configurable retention
+* Extracts URLs, domains, IPs, hashes, and other email observables
+* Adds attachments and the original EML to TheHive
+* Follows redirects and decodes Microsoft 365 Safelinks
+* Configurable whitelists, analyzer exclusions, and verdict mappings
+* Automatic verdicts and IoC marking
+* Exports malicious cases to MISP and keeps suspicious cases open for review
+* Start and result emails with a log and link to the web view
 
 ## Credits
 
@@ -56,4 +59,4 @@ It handles the full analysis flow from extracting observables, running the appli
 
 ## License
 
-ThePhish-NG is a free and open-source software released under the [AGPL-3.0 license](LICENSE).
+ThePhish-NG is free and open-source software released under the [AGPL-3.0 license](LICENSE).
