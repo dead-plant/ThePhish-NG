@@ -1,7 +1,7 @@
 {
 	"version": 1,
 	"DomainMailSPFDMARC_Analyzer_1_2" : {
-		"dataType" : ["url", "ip", "domain", "mail"],
+		"dataType" : ["domain", "fqdn", "file"],
 		"levelMapping" : {
 			"malicious" : "suspicious",
 			"suspicious" : "suspicious",
@@ -64,7 +64,7 @@
 		}
 	},
 	"Robtex_IP_Query_1_0" : {
-		"dataType" : ["url", "ip", "domain", "mail"],
+		"dataType" : ["ip"],
 		"levelMapping" : {
 			"malicious" : "info",
 			"suspicious" : "info",

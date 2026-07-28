@@ -29,6 +29,7 @@ It handles the full analysis flow from extracting observables, running the appli
 
 * [Usage Example](docs/usage-example.md)
 * [Setup Guide](docs/setup.md)
+* [Configuration Options](docs/configuration.md)
 
 ## External References
 

@@ -143,7 +143,7 @@ class TestBuildCase:
         assert stub.observables_of_type("hash")  # sha256 of the attachment
 
         file_names = {name for name, _ in stub.files}
-        assert file_names == {"invoice.pdf", "Attack invoice.eml"}
+        assert file_names == {"invoice.pdf", "email.eml"}
         eml_tags = next(tags for name, tags in stub.files if name.endswith(".eml"))
         assert case_builder.EML_SAMPLE_TAG in eml_tags
 

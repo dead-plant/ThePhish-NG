@@ -3,8 +3,8 @@
 **Note**: Throughout this guide I will use values enclosed in angle brackets such as `<hostname>`, as placeholders.
 Replace them with your own values and remove the angle brackets.
 
-In this guide I place all application files in the /opt/thephish-stack directory.
-If you choose a different location, you have to adjust the paths accordingly.
+This guide places all application files in `/opt/thephish-stack`.
+If you choose a different location, adjust the paths accordingly.
 
 ## Table of Contents
 
@@ -13,59 +13,80 @@ If you choose a different location, you have to adjust the paths accordingly.
 Cortex and TheHive are very resource intensive.
 Depending on your workload you may have to adjust the system resources.
 
-My Recommendation for starters:
+Recommended starting point:
+
 * 8 vCPU
-* 32GB RAM
+* 32 GB RAM
 
 ## Prerequisites
 
-* Fresh linux install (Preferably Debian 13)
-* User with sudo permissions (Working as root is also possible, but it can cause problems with Elasticsearch)
-* Docker & Docker compose installed and running (https://docs.docker.com/engine/install/debian/)
-* git installed
+* Fresh Linux installation (preferably Debian 13)
+* User with sudo privileges
+* Docker Engine 25 or newer and Docker Compose plugin 2.20.2 or newer, installed and running
+* Current user can run Docker without `sudo`
+* `git`, `jq`, and `openssl`
+
+Check the Docker installation before continuing:
+
+```bash
+docker version
+docker compose version
+docker run hello-world
+```
+
+See the official [Docker installation guide](https://docs.docker.com/engine/install/debian/) and [Linux post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/).
 
 ## Disclaimer
 
-This is a simplified installation guide.
-It is fine for most regular users and smaller deployments, if you rely on this install in your production environments you should probably take a look at the official documentations.
+This is a simplified installation guide for most users and smaller deployments.
+For production environments, also review the official documentation.
 
 ## Install TheHive, Cortex, and MISP
 
 This guide only covers the installation using Docker.
 
-If you want to install natively you have to follow the official documentation:
+For a native installation, follow the official documentation:
+
 * [TheHive Install](https://docs.strangebee.com/thehive/installation/installation-guide-linux-standalone-server)
 * [Cortex Install](https://docs.strangebee.com/cortex/installation-and-configuration/)
 * [MISP download](https://www.misp-project.org/download/)
 
-Once you finished the installation and verified the services are working, you can proceed to the [configuration section](#configure-services-for-thephish) of this guide.
+After installing and verifying the services, continue to [Secure the Initial Administrator Accounts](#secure-the-initial-administrator-accounts).
 
-### Install using Docker (Recommended)
+### Install Using Docker (Recommended)
 
-First make directory for the applications
+Create the application directory:
 
 ```bash
-sudo mkdir -p /opt/thephish-stack/cortex /opt/thephish-stack/thehive /opt/thephish-stack/misp
-sudo chown $USER:$(id -gn) /opt/thephish-stack -R
+sudo mkdir -p /opt/thephish-stack
+sudo chown -R "$USER:$(id -gn)" /opt/thephish-stack
 cd /opt/thephish-stack
 ```
 
-Now clone the official git repos and place the files in the directories
+Clone the official repositories and move the files into place:
 
 ```bash
 git clone https://github.com/MISP/misp-docker.git misp
 
 git clone https://github.com/StrangeBeeCorp/docker.git strangebee-docker
+git -C misp rev-parse HEAD
+git -C strangebee-docker rev-parse HEAD
+
 mv ./strangebee-docker/prod1-cortex ./cortex
 mv ./strangebee-docker/prod1-thehive ./thehive
 mv ./strangebee-docker/versions.env ./versions.env
 ```
 
-Initialize TheHive and Cortex .env files. Since we're deploying a reverse proxy on the host later, we disable the included nginx and expose the Services to the host.
+Initialize the TheHive and Cortex `.env` files. The commands below disable the
+included Nginx services and bind the application ports to localhost for the host
+reverse proxy. They also remove fixed container names so Docker Compose can keep
+the two Elasticsearch services separate.
 
 ```bash
 cd cortex
 bash ./scripts/init.sh
+chmod 600 .env
+sed -i '/^[[:space:]]*container_name:[[:space:]]*/d' docker-compose.yml
 sed -i '/^  nginx:$/a\    profiles: ["disabled"]' docker-compose.yml
 sed -i 's/# ports:/ports:/' docker-compose.yml
 sed -i -E "s|^(\s*)(#\s)?(\s*)-\s*['\"][^'\"]*9001:9001['\"]\s*$|\1\3- '127.0.0.1:9001:9001'|" docker-compose.yml
@@ -74,6 +95,8 @@ cd ..
 
 cd thehive
 bash ./scripts/init.sh
+chmod 600 .env
+sed -i '/^[[:space:]]*container_name:[[:space:]]*/d' docker-compose.yml
 sed -i '/^  nginx:$/a\    profiles: ["disabled"]' docker-compose.yml
 sed -i 's/# ports:/ports:/' docker-compose.yml
 sed -i -E "s|^(\s*)(#\s)?(\s*)-\s*['\"][^'\"]*9000:9000['\"]\s*$|\1\3- '127.0.0.1:9000:9000'|" docker-compose.yml
@@ -81,13 +104,15 @@ docker compose config >/dev/null
 cd ..
 ```
 
-Now you can delete the strangebee-docker GitHub repository and the version.env file, as theese are only needed for initialization
+The remaining StrangeBee repository files and `versions.env` are no longer
+needed after both initialization scripts finish:
 
 ```bash
-rm -rf strangebee-docker versions.env
+rm -rf -- strangebee-docker
+rm -f -- versions.env
 ```
 
-MISP .env configuration
+### Configure the MISP Environment
 
 ```bash
 cd misp
@@ -125,49 +150,77 @@ sed -i -E 's|^[[:space:]#]*TZ=.*$|TZ=Europe/Vienna|' .env
 cd ..
 ```
 
-After we set our config in the .env files we can start the docker compose.
+After configuring the `.env` files, start all three Docker Compose stacks.
 
 ```bash
 cd thehive
 docker compose up -d
+docker compose ps
 
 cd ../cortex
 docker compose up -d
+docker compose ps
 
 cd ../misp
 docker compose up -d
+docker compose ps
 
 cd ..
 ```
 
+Confirm that every service is running or healthy. Startup can take a few minutes.
+If a service fails, run `docker compose logs` from its directory.
+
+### Secure the Initial Administrator Accounts
+
+Secure TheHive and Cortex before exposing them through the reverse proxy.
+
+From your computer, open an SSH tunnel with forwarding to their localhost-only ports:
+
+```bash
+ssh -L 9000:127.0.0.1:9000 -L 9001:127.0.0.1:9001 <user>@<server>
+```
+
+Then complete these steps:
+
+* Open `http://127.0.0.1:9000` in your browser, sign in to TheHive as `admin@thehive.local`
+  with the initial password `secret`, and immediately set a secure password.
+* Open `http://127.0.0.1:9001` in your browser, update the Cortex database, and create the first
+  super administrator.
+* Keep the secure MISP administrator password configured earlier.
+
+Close the SSH tunnel when the initial setup is complete.
+
 ## Configure Nginx Reverse Proxy
 
-In this section we will install and configure nginx as a TLS terminating reverse proxy. If you do not want to use nginx, i strongly recommend to use a different reverse proxy, as ThePhish-NG does not offer built in TLS.
+This section installs and configures Nginx as a TLS-terminating reverse proxy.
+If you prefer another reverse proxy, configure it before exposing the services.
+I don't recommend running ThePhish-NG without a reverse proxy.
 
-I will assume you already got the following setup. You may have to adjust the paths and hostnames:
+This section assumes the following setup. Adjust the paths and hostnames as needed:
 
-* Server with an IP-Address reachable by users needing to access the stack
-* DNS for `thephish.example.com` and `*.thephish.example.com` pointing to that IP-Address
-* You got a valid TLS certificate for both `thephish.example.com` and `*.thephish.example.com`
+* Server with an IP address reachable by the stack's users
+* DNS for `thephish.example.com` and `*.thephish.example.com` pointing to that IP address
+* Valid TLS certificate for both `thephish.example.com` and `*.thephish.example.com`
 * The certificate chain is at `/etc/letsencrypt/live/thephish.example.com/fullchain.pem` and the key at `/etc/letsencrypt/live/thephish.example.com/privkey.pem`
-* Services bound to these ports: ThePhish-NG: 127.0.0.1:8080, TheHive: 127.0.0.1:9000, Cortex: 127.0.0.1:9000, MISP: 127.0.0.1:9443
+* Services bound to these ports: ThePhish-NG: `127.0.0.1:8080`, TheHive: `127.0.0.1:9000`, Cortex: `127.0.0.1:9001`, MISP: `127.0.0.1:9443`
 
-### Install Nginx using nginx.org repo
+### Install Nginx Using the nginx.org Repository
 
-Look at the official install documentation: https://nginx.org/en/linux_packages.html#Debian
+Follow the [official Nginx installation instructions](https://nginx.org/en/linux_packages.html#Debian).
 
-Once you finished installing and verified nginx is running with a default configuration, continue with the configuration.
+Continue after Nginx is installed and running with its default configuration.
 
-### Global Nginx config
+### Global Nginx Configuration
 
-If this is a fresh nginx install and you are only using it for this application you can safely apply the configuration below, otherwise, you might want to edit it manually and adjust it further.
+If this is a fresh Nginx installation used only for this application, apply the configuration below. Otherwise, merge these settings into your existing configuration.
 
-Backup existing nginx.conf and replace it with hardened config:
+Back up the existing `nginx.conf` and replace it with the hardened configuration:
 
 ```bash
 sudo cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak
 
-sudo cat > /etc/nginx/nginx.conf <<'EOF'
+sudo tee /etc/nginx/nginx.conf >/dev/null <<'EOF'
 # For more information on configuration, see:
 #   * Official English Documentation: http://nginx.org/en/docs/
 #   * Official Russian Documentation: http://nginx.org/ru/docs/
@@ -229,18 +282,18 @@ http {
 EOF
 ```
 
-After you edited the config, you should run `sudo nginx -t` to verify there are no syntax errors in the configuration.
+After writing the configuration, run `sudo nginx -t` to check for syntax errors.
 
 ### Create Nginx hosts for TheHive, Cortex, and MISP
 
 If you already have one or more of these behind a reverse proxy, you can skip their hosts here.
 
-Make sure to replace the host in server_name and the certificate paths in all of these configs.
+Replace each `server_name` and certificate path with your values.
 
 TheHive:
 
 ```bash
-sudo cat > /etc/nginx/conf.d/thehive.conf <<'EOF'
+sudo tee /etc/nginx/conf.d/thehive.conf >/dev/null <<'EOF'
 server {
 	listen 443 ssl;
 	listen [::]:443 ssl;
@@ -266,7 +319,7 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host  $host;
         
-        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains";
+        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         proxy_pass              http://127.0.0.1:9000/;
         proxy_http_version      1.1;
     }
@@ -278,7 +331,7 @@ EOF
 Cortex:
 
 ```bash
-sudo cat > /etc/nginx/conf.d/cortex.conf <<'EOF'
+sudo tee /etc/nginx/conf.d/cortex.conf >/dev/null <<'EOF'
 server {
 	listen 443 ssl;
 	listen [::]:443 ssl;
@@ -304,7 +357,7 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host  $host;
         
-        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains";
+        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         proxy_pass              http://127.0.0.1:9001/;
         proxy_http_version      1.1;
     }
@@ -315,7 +368,7 @@ EOF
 MISP:
 
 ```bash
-sudo cat > /etc/nginx/conf.d/misp.conf <<'EOF'
+sudo tee /etc/nginx/conf.d/misp.conf >/dev/null <<'EOF'
 server {
 	listen 443 ssl;
 	listen [::]:443 ssl;
@@ -341,8 +394,9 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host  $host;
         
-        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains";
+        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         proxy_pass              https://127.0.0.1:9443/;
+        # MISP forces a HTTP -> HTTPS redirect and uses a self-signed certificate.
         proxy_ssl_verify off;
         proxy_http_version      1.1;
     }
@@ -352,10 +406,10 @@ EOF
 
 ### Nginx host for ThePhish-NG
 
-Replace the host in server_name and the certificate paths.
+Replace the `server_name` and certificate paths with your values.
 
 ```bash
-sudo cat > /etc/nginx/conf.d/thephish-ng.conf <<'EOF'
+sudo tee /etc/nginx/conf.d/thephish-ng.conf >/dev/null <<'EOF'
 server {
 	listen 443 ssl;
 	listen [::]:443 ssl;
@@ -381,7 +435,7 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host  $host;
         
-        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains";
+        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         proxy_pass              http://127.0.0.1:8080/;
         proxy_http_version      1.1;
     }
@@ -398,13 +452,16 @@ sudo systemctl restart nginx
 
 ## Configure Services for ThePhish-NG
 
-This section assumes that the TheHive, Cortex and MISP webapps are reachable via their domains and that you created a default admin user with a secure password.
+This section assumes TheHive, Cortex, and MISP are reachable and you created admin accounts with secure passwords.
 
 ### Configure TheHive
 
 #### Request Community License
 
-Since TheHive version 5.3 you need to have a valid license. You get a 14-day Platinum trial license, and afterward you can request a free community license. I recommend you request the free license right away as the request will be reviewed by the StrangeBee team before you can use it.
+Starting with TheHive 5.3, a valid license is required.
+
+New installations include a 14-day Platinum trial. After that you need to request a free community license.
+I recommend you request it early because StrangeBee can take some time to review your registration.
 
 You can find a detailed tutorial on how to request and activate such a license on the StrangeBee website:
 
