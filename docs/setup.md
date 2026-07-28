@@ -24,14 +24,12 @@ My Recommendation for starters:
 * Docker & Docker compose installed and running (https://docs.docker.com/engine/install/debian/)
 * git installed
 
-## Install TheHive, Cortex, and MISP
-
-### Disclaimer
+## Disclaimer
 
 This is a simplified installation guide.
-It is fine for most regular users and smaller deployments, if you rely on this install in your production environments you should probably take a look at the official documentations and config options.
+It is fine for most regular users and smaller deployments, if you rely on this install in your production environments you should probably take a look at the official documentations.
 
-### Install Natively
+## Install TheHive, Cortex, and MISP
 
 This guide only covers the installation using Docker.
 
@@ -63,7 +61,7 @@ mv ./strangebee-docker/prod1-thehive ./thehive
 mv ./strangebee-docker/versions.env ./versions.env
 ```
 
-Initialize TheHive and Cortex .env files. Since we're deploying a reverse proxy on the host later, we disable the included nginx and expose Cortex to the host.
+Initialize TheHive and Cortex .env files. Since we're deploying a reverse proxy on the host later, we disable the included nginx and expose the Services to the host.
 
 ```bash
 cd cortex
@@ -112,7 +110,6 @@ sed -i -E 's|^[[:space:]#]*ENABLE_BACKGROUND_UPDATES=.*$|ENABLE_BACKGROUND_UPDAT
 sed -i -E 's|^[[:space:]#]*PHP_SESSION_COOKIE_SECURE=.*$|PHP_SESSION_COOKIE_SECURE=true|' .env
 sed -i -E 's|^[[:space:]#]*PHP_SESSION_COOKIE_SAMESITE=.*$|PHP_SESSION_COOKIE_SAMESITE=Lax|' .env
 sed -i -E 's|^[[:space:]#]*X_FRAME_OPTIONS=.*$|X_FRAME_OPTIONS=SAMEORIGIN|' .env
-
 sed -i -E 's|^[[:space:]#]*NGINX_X_FORWARDED_FOR=.*$|NGINX_X_FORWARDED_FOR=true|' .env
 sed -i -E 's|^[[:space:]#]*NGINX_SET_REAL_IP_FROM=.*$|NGINX_SET_REAL_IP_FROM=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16|' .env
 sed -i -E 's|^[[:space:]#]*CORE_HTTP_PORT=.*$|CORE_HTTP_PORT=127.0.0.1:9080|' .env
@@ -122,7 +119,7 @@ sed -i -E 's|^[[:space:]#]*CORE_HTTPS_PORT=.*$|CORE_HTTPS_PORT=127.0.0.1:9443|' 
 sed -i -E "s|^[[:space:]#]*ADMIN_PASSWORD=.*$|ADMIN_PASSWORD=<SecureAdminPassword>|" .env
 sed -i -E 's|^[[:space:]#]*ADMIN_EMAIL=.*$|ADMIN_EMAIL=admin@misp.local|' .env
 sed -i -E 's|^[[:space:]#]*ADMIN_ORG=.*$|ADMIN_ORG=ADMIN|' .env
-sed -i -E 's|^[[:space:]#]*BASE_URL=.*$|BASE_URL=https://misp.example.com|' .env
+sed -i -E 's|^[[:space:]#]*BASE_URL=.*$|BASE_URL=https://misp.thephish.example.com|' .env
 sed -i -E 's|^[[:space:]#]*TZ=.*$|TZ=Europe/Vienna|' .env
 
 cd ..
@@ -143,9 +140,262 @@ docker compose up -d
 cd ..
 ```
 
-### Configure Nginx Reverse Proxy
+## Configure Nginx Reverse Proxy
 
-## Configure Services for ThePhish
+In this section we will install and configure nginx as a TLS terminating reverse proxy. If you do not want to use nginx, i strongly recommend to use a different reverse proxy, as ThePhish-NG does not offer built in TLS.
+
+I will assume you already got the following setup. You may have to adjust the paths and hostnames:
+
+* Server with an IP-Address reachable by users needing to access the stack
+* DNS for `thephish.example.com` and `*.thephish.example.com` pointing to that IP-Address
+* You got a valid TLS certificate for both `thephish.example.com` and `*.thephish.example.com`
+* The certificate chain is at `/etc/letsencrypt/live/thephish.example.com/fullchain.pem` and the key at `/etc/letsencrypt/live/thephish.example.com/privkey.pem`
+* Services bound to these ports: ThePhish-NG: 127.0.0.1:8080, TheHive: 127.0.0.1:9000, Cortex: 127.0.0.1:9000, MISP: 127.0.0.1:9080
+
+### Install Nginx using nginx.org repo
+
+Look at the official install documentation: https://nginx.org/en/linux_packages.html#Debian
+
+Once you finished installing and verified nginx is running with a default configuration, continue with the configuration.
+
+### Global Nginx config
+
+If this is a fresh nginx install and you are only using it for this application you can safely apply the configuration below, otherwise, you might want to edit it manually and adjust it further.
+
+Backup existing nginx.conf and replace it with hardened config:
+
+```bash
+sudo cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak
+
+sudo cat > /etc/nginx/nginx.conf <<'EOF'
+# For more information on configuration, see:
+#   * Official English Documentation: http://nginx.org/en/docs/
+#   * Official Russian Documentation: http://nginx.org/ru/docs/
+
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log notice;
+pid /run/nginx.pid;
+
+# Load dynamic modules. See /usr/share/doc/nginx/README.dynamic.
+include /usr/share/nginx/modules/*.conf;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile            on;
+    tcp_nopush          on;
+    keepalive_timeout   65;
+    types_hash_max_size 4096;
+
+    include             /etc/nginx/mime.types;
+    default_type        application/octet-stream;
+
+    # Load modular configuration files from the /etc/nginx/conf.d directory.
+    # See http://nginx.org/en/docs/ngx_core_module.html#include
+    # for more information.
+    include /etc/nginx/conf.d/*.conf;
+    
+    # https://configurator.tlsref.org/#server=nginx&version=1.27.3&config=intermediate&openssl=4.0.1&hsts&guideline=6.0
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ecdh_curve X25519MLKEM768:X25519:prime256v1:secp384r1;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+
+    # see also ssl_session_ticket_key alternative to stateful session cache
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:MozSSL:10m;  # about 40000 sessions
+    
+    # Safe gzip defaults
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 4;
+    gzip_min_length 1024;
+    gzip_http_version 1.1;
+
+    gzip_proxied expired no-cache no-store private auth;
+
+    gzip_types text/plain text/css text/xml application/json application/javascript application/xml application/rss+xml image/svg+xml;
+}
+
+EOF
+```
+
+After you edited the config, you should run `sudo nginx -t` to verify there are no syntax errors in the configuration.
+
+### Create Nginx hosts for TheHive, Cortex, and MISP
+
+If you already have one or more of these behind a reverse proxy, you can skip their hosts here.
+
+Make sure to replace the host in server_name and the certificate paths in all of these configs.
+
+TheHive:
+
+```bash
+sudo cat > /etc/nginx/conf.d/thehive.conf <<'EOF'
+server {
+	listen 443 ssl;
+	listen [::]:443 ssl;
+	server_name thehive.thephish.example.com;
+	http2 on;
+
+	ssl_certificate /etc/letsencrypt/live/thephish.example.com/fullchain.pem;  
+	ssl_certificate_key /etc/letsencrypt/live/thephish.example.com/privkey.pem;
+	
+    proxy_connect_timeout   600;
+    proxy_send_timeout      600;
+    proxy_read_timeout      600;
+    send_timeout            600;
+    client_max_body_size    2G;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    client_header_buffer_size 8k;
+
+    location / {
+    	proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host  $host;
+        
+        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains";
+        proxy_pass              http://127.0.0.1:9000/;
+        proxy_http_version      1.1;
+    }
+}
+
+EOF
+```
+
+Cortex:
+
+```bash
+sudo cat > /etc/nginx/conf.d/cortex.conf <<'EOF'
+server {
+	listen 443 ssl;
+	listen [::]:443 ssl;
+	server_name cortex.thephish.example.com;
+	http2 on;
+
+	ssl_certificate /etc/letsencrypt/live/thephish.example.com/fullchain.pem;  
+	ssl_certificate_key /etc/letsencrypt/live/thephish.example.com/privkey.pem;
+	
+    proxy_connect_timeout   600;
+    proxy_send_timeout      600;
+    proxy_read_timeout      600;
+    send_timeout            600;
+    client_max_body_size    2G;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    client_header_buffer_size 8k;
+
+    location / {
+    	proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host  $host;
+        
+        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains";
+        proxy_pass              http://127.0.0.1:9001/;
+        proxy_http_version      1.1;
+    }
+}
+EOF
+```
+
+MISP:
+
+```bash
+sudo cat > /etc/nginx/conf.d/misp.conf <<'EOF'
+server {
+	listen 443 ssl;
+	listen [::]:443 ssl;
+	server_name misp.thephish.example.com;
+	http2 on;
+
+	ssl_certificate /etc/letsencrypt/live/thephish.example.com/fullchain.pem;  
+	ssl_certificate_key /etc/letsencrypt/live/thephish.example.com/privkey.pem;
+	
+    proxy_connect_timeout   600;
+    proxy_send_timeout      600;
+    proxy_read_timeout      600;
+    send_timeout            600;
+    client_max_body_size    150M;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    client_header_buffer_size 8k;
+
+    location / {
+    	proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host  $host;
+        
+        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains";
+        proxy_pass              http://127.0.0.1:9080/;
+        proxy_http_version      1.1;
+    }
+}
+EOF
+```
+
+### Nginx host for ThePhish-NG
+
+Replace the host in server_name and the certificate paths.
+
+```bash
+sudo cat > /etc/nginx/conf.d/thephish-ng.conf <<'EOF'
+server {
+	listen 443 ssl;
+	listen [::]:443 ssl;
+	server_name thephish.example.com;
+	http2 on;
+
+	ssl_certificate /etc/letsencrypt/live/thephish.example.com/fullchain.pem;  
+	ssl_certificate_key /etc/letsencrypt/live/thephish.example.com/privkey.pem;
+	
+    proxy_connect_timeout   600;
+    proxy_send_timeout      600;
+    proxy_read_timeout      600;
+    send_timeout            600;
+    client_max_body_size    150M;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    client_header_buffer_size 8k;
+
+    location / {
+    	proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host  $host;
+        
+        add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains";
+        proxy_pass              http://127.0.0.1:8080/;
+        proxy_http_version      1.1;
+    }
+}
+EOF
+```
+
+### Verify config and restart Nginx
+
+```bash
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+## Configure Services for ThePhish-NG
 
 ### Configure TheHive
 
