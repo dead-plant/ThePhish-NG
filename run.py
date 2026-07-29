@@ -24,6 +24,17 @@ def parse_args() -> argparse.Namespace:
         default=Path(__file__).resolve().parent / "config",
         help="Path to the configuration directory (default: ./config).",
     )
+    parser.add_argument(
+        "--bind-addr",
+        default="127.0.0.1",
+        help="Address the web server binds to (default: 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port the web server binds to (default: 8080).",
+    )
     return parser.parse_args()
 
 
@@ -51,7 +62,6 @@ def main() -> None:
     from app.extensions import socketio
 
     app = create_app()
-    server_cfg: dict = config.get_app_config()["server"]
 
     # A fresh process keeps the worker isolated from Flask and its connections.
     worker_process = multiprocessing.get_context("spawn").Process(
@@ -66,8 +76,13 @@ def main() -> None:
     previous_sigterm_handler = signal.signal(signal.SIGTERM, handle_sigterm)
     try:
         worker_process.start()
-        log.info(f"Starting server on {server_cfg["bind_addr"]}:{server_cfg["port"]}")
-        socketio.run(app, host=server_cfg["bind_addr"], port=server_cfg["port"], use_reloader=False)
+        log.info("Starting server on %s:%s", args.bind_addr, args.port)
+        socketio.run(
+            app,
+            host=args.bind_addr,
+            port=args.port,
+            use_reloader=False,
+        )
     except KeyboardInterrupt:
         pass
     finally:

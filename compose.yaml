@@ -2,8 +2,6 @@
 #
 # Before the first start, adjust these values in config/app.conf:
 #
-#   [server] bind_addr = "0.0.0.0" (container-internal)
-#
 #   [redis]  url                       = "redis://redis:6379/0"
 #            celery_broker_url         = "redis://redis:6379/1"
 #            celery_result_backend_url = "redis://redis:6379/2"
@@ -13,17 +11,15 @@ name: thephish-ng
 services:
   thephish-ng:
     image: ghcr.io/dead-plant/thephish-ng:1
+    command: ["--bind-addr", "0.0.0.0", "--port", "8080"]
     restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
-    # PID 1 init: reaps the Celery worker child process on shutdown.
     init: true
     volumes:
       - ./config:/thephish/config:ro,z
     ports:
-      # Bound to localhost for the host Nginx reverse proxy (see docs/setup.md).
-      # Must match [server] port in app.conf.
       - "127.0.0.1:8080:8080"
     tmpfs:
       - /tmp:mode=1777,size=512m

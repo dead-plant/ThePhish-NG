@@ -144,7 +144,7 @@ def init(config_dir: Path) -> None:
     _init_logging(config_dir / LOGGING_FILE)
     log.info("Loaded %s", LOGGING_FILE)
 
-    # 2. app.conf -> bind address + port.
+    # 2. Main application settings.
     _app_config = _load_versioned_toml(config_dir / APP_CONF_FILE, EXPECTED_VERSIONS[APP_CONF_FILE])
     log.info("Loaded %s", APP_CONF_FILE)
 

@@ -6,8 +6,11 @@ Here you will find an explanation of each file as well as detailed descriptions 
 ## Table of Contents
 
 * [Versioning](#versioning)
+* [Command Line Arguments](#command-line-arguments)
+  * [Config Directory](#config-directory)
+  * [Bind Address](#bind-address)
+  * [Port](#port)
 * [Application Config](#application-config)
-  * [Server](#server)
   * [Webapp](#webapp)
   * [Redis](#redis)
   * [Analysis](#analysis)
@@ -32,6 +35,43 @@ If you get an error saying that your config is outdated, please download the new
 
 The `version` attribute in `logging.json` is part of the Python logging configuration format and is not tied to ThePhish-NG releases.
 
+## Command Line Arguments
+
+Some options are configured using command line arguments when starting ThePhish-NG.
+All arguments are optional.
+
+```console
+python run.py --config-dir ./config --bind-addr 127.0.0.1 --port 8080
+```
+
+### Config Directory
+
+```console
+--config-dir ./config
+```
+
+Path to the directory containing the ThePhish-NG configuration files.
+The default is the `config` directory next to `run.py`.
+Use this option when the configuration files are stored elsewhere.
+
+### Bind Address
+
+```console
+--bind-addr 127.0.0.1
+```
+
+Network interface the Flask web server binds to. The default is `127.0.0.1`.
+You should keep the default in most cases, as it is not recommended to expose the Flask server directly without a reverse proxy.
+
+### Port
+
+```console
+--port 8080
+```
+
+Port the Flask web server binds to. The default is `8080`.
+Change this if the default port is already in use.
+
 ## Application Config
 
 **filename:** `app.conf`
@@ -42,24 +82,6 @@ The `version` attribute in `logging.json` is part of the Python logging configur
 
 This is the main configuration file of ThePhish-NG. It is used to configure the behavior and connections of the main application.
 It is split into multiple categories, each containing several configuration options.
-
-### Server
-
-**Options related to the Flask web server**
-
-```toml
-bind_addr = "127.0.0.1"
-```
-
-Network interface the Flask web server binds to.
-You should keep the default in most cases, as it is not recommended to expose the Flask server directly without a reverse proxy.
-
-```toml
-port = 8080
-```
-
-Port the Flask web server binds to.
-Change this if the default port is already in use.
 
 ### Webapp
 
