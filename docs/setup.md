@@ -1,6 +1,6 @@
 # Setup Guide
 
-**Note**: Throughout this guide I will use values enclosed in angle brackets such as `<hostname>`, as placeholders.
+**Note**: Throughout this guide, I will use values enclosed in angle brackets, such as `<hostname>`, as placeholders.
 Replace them with your own values and remove the angle brackets.
 
 This guide places all application files in `/opt/thephish-stack`.
@@ -8,10 +8,30 @@ If you choose a different location, adjust the paths accordingly.
 
 ## Table of Contents
 
+* [Hardware Requirements](#hardware-requirements)
+* [Prerequisites](#prerequisites)
+* [Disclaimer](#disclaimer)
+* [Install TheHive, Cortex, and MISP](#install-thehive-cortex-and-misp)
+  * [Install Using Docker (Recommended)](#install-using-docker-recommended)
+  * [Secure the Initial Administrator Accounts](#secure-the-initial-administrator-accounts)
+* [Configure Nginx Reverse Proxy](#configure-nginx-reverse-proxy)
+  * [Install Nginx Using the nginx.org Repository](#install-nginx-using-the-nginxorg-repository)
+  * [Global Nginx Configuration](#global-nginx-configuration)
+  * [Create Nginx Virtual Hosts for TheHive, Cortex, and MISP](#create-nginx-virtual-hosts-for-thehive-cortex-and-misp)
+  * [Nginx Virtual Host for ThePhish-NG](#nginx-virtual-host-for-thephish-ng)
+  * [Verify the Configuration and Restart Nginx](#verify-the-configuration-and-restart-nginx)
+* [Configure Services for ThePhish-NG](#configure-services-for-thephish-ng)
+  * [Configure MISP](#configure-misp)
+  * [Configure Cortex](#configure-cortex)
+  * [Configure TheHive](#configure-thehive)
+* [Deploy ThePhish-NG](#deploy-thephish-ng)
+  * [Deploy using Docker Compose](#deploy-using-docker-compose)
+  * [Deploy natively with systemd service](#deploy-natively-with-systemd-service)
+
 ## Hardware Requirements
 
-Cortex and TheHive are very resource intensive.
-Depending on your workload you may have to adjust the system resources.
+Cortex and TheHive are very resource-intensive.
+Depending on your workload, you may have to adjust the system resources.
 
 Recommended starting point:
 
@@ -20,10 +40,10 @@ Recommended starting point:
 
 ## Prerequisites
 
-* Fresh Linux installation (preferably Debian 13)
-* User with sudo privileges
+* A fresh Linux installation (preferably Debian 13)
+* A user with sudo privileges
 * Docker Engine 25 or newer and Docker Compose plugin 2.20.2 or newer, installed and running
-* Current user can run Docker without `sudo`
+* The current user can run Docker without `sudo`
 * `git`, `jq`, and `openssl`
 
 Check the Docker installation before continuing:
@@ -38,12 +58,12 @@ See the official [Docker installation guide](https://docs.docker.com/engine/inst
 
 ## Disclaimer
 
-This is a simplified installation guide for most users and smaller deployments.
-For production environments, also review the official documentation.
+This is a simplified installation guide intended for regular users and small deployments.
+For production environments, also review the official documentations of TheHive, Cortex and MISP.
 
 ## Install TheHive, Cortex, and MISP
 
-This guide only covers the installation using Docker.
+This guide only covers installation using Docker.
 
 For a native installation, follow the official documentation:
 
@@ -54,6 +74,8 @@ For a native installation, follow the official documentation:
 After installing and verifying the services, continue to [Secure the Initial Administrator Accounts](#secure-the-initial-administrator-accounts).
 
 ### Install Using Docker (Recommended)
+
+#### Download the applications
 
 Create the application directory:
 
@@ -77,7 +99,9 @@ mv ./strangebee-docker/prod1-thehive ./thehive
 mv ./strangebee-docker/versions.env ./versions.env
 ```
 
-Initialize the TheHive and Cortex `.env` files. The commands below disable the
+#### Configure environments for TheHive and Cortex
+
+Initialize TheHive and Cortex `.env` files. The commands below disable the
 included Nginx services and bind the application ports to localhost for the host
 reverse proxy. They also remove fixed container names so Docker Compose can keep
 the two Elasticsearch services separate.
@@ -112,7 +136,7 @@ rm -rf -- strangebee-docker
 rm -f -- versions.env
 ```
 
-### Configure the MISP Environment
+#### Configure the MISP Environment
 
 ```bash
 cd misp
@@ -125,6 +149,8 @@ sed -i -E "s|^[[:space:]#]*ENCRYPTION_KEY=.*$|ENCRYPTION_KEY=$(openssl rand -hex
 sed -i -E "s|^[[:space:]#]*MYSQL_PASSWORD=.*$|MYSQL_PASSWORD=$(openssl rand -hex 32)|" .env
 sed -i -E "s|^[[:space:]#]*MYSQL_ROOT_PASSWORD=.*$|MYSQL_ROOT_PASSWORD=$(openssl rand -hex 32)|" .env
 sed -i -E "s|^[[:space:]#]*REDIS_PASSWORD=.*$|REDIS_PASSWORD=$(openssl rand -hex 32)|" .env
+MISP_ADMIN_PASSWORD=$(openssl rand -hex 16)
+sed -i -E "s|^[[:space:]#]*ADMIN_PASSWORD=.*$|ADMIN_PASSWORD=$MISP_ADMIN_PASSWORD|" .env
 sed -i -E 's|^[[:space:]#]*DISABLE_PRINTING_PLAINTEXT_CREDENTIALS=.*$|DISABLE_PRINTING_PLAINTEXT_CREDENTIALS=true|' .env
 sed -i -E 's|^[[:space:]#]*ENABLE_REDIS_EMPTY_PASSWORD=.*$|ENABLE_REDIS_EMPTY_PASSWORD=false|' .env
 sed -i -E 's|^[[:space:]#]*DEBUG=.*$|DEBUG=0|' .env
@@ -141,16 +167,18 @@ sed -i -E 's|^[[:space:]#]*CORE_HTTP_PORT=.*$|CORE_HTTP_PORT=127.0.0.1:9080|' .e
 sed -i -E 's|^[[:space:]#]*CORE_HTTPS_PORT=.*$|CORE_HTTPS_PORT=127.0.0.1:9443|' .env
 
 # adjust these values
-sed -i -E "s|^[[:space:]#]*ADMIN_PASSWORD=.*$|ADMIN_PASSWORD=<SecureAdminPassword>|" .env
 sed -i -E 's|^[[:space:]#]*ADMIN_EMAIL=.*$|ADMIN_EMAIL=admin@misp.local|' .env
 sed -i -E 's|^[[:space:]#]*ADMIN_ORG=.*$|ADMIN_ORG=ADMIN|' .env
 sed -i -E 's|^[[:space:]#]*BASE_URL=.*$|BASE_URL=https://misp.thephish.example.com|' .env
 sed -i -E 's|^[[:space:]#]*TZ=.*$|TZ=Europe/Vienna|' .env
 
+printf 'MISP administrator password (save this now): %s\n' "$MISP_ADMIN_PASSWORD"
+unset MISP_ADMIN_PASSWORD
+
 cd ..
 ```
 
-After configuring the `.env` files, start all three Docker Compose stacks.
+#### Start the Docker Compose stacks
 
 ```bash
 cd thehive
@@ -175,7 +203,7 @@ If a service fails, run `docker compose logs` from its directory.
 
 Secure TheHive and Cortex before exposing them through the reverse proxy.
 
-From your computer, open an SSH tunnel with forwarding to their localhost-only ports:
+From your computer, open an SSH tunnel that forwards their localhost-only ports:
 
 ```bash
 ssh -L 9000:127.0.0.1:9000 -L 9001:127.0.0.1:9001 <user>@<server>
@@ -199,10 +227,10 @@ I don't recommend running ThePhish-NG without a reverse proxy.
 
 This section assumes the following setup. Adjust the paths and hostnames as needed:
 
-* Server with an IP address reachable by the stack's users
+* A server with an IP address reachable by the stack's users
 * DNS for `thephish.example.com` and `*.thephish.example.com` pointing to that IP address
 * Valid TLS certificate for both `thephish.example.com` and `*.thephish.example.com`
-* The certificate chain is at `/etc/letsencrypt/live/thephish.example.com/fullchain.pem` and the key at `/etc/letsencrypt/live/thephish.example.com/privkey.pem`
+* The certificate chain is at `/etc/letsencrypt/live/thephish.example.com/fullchain.pem`, and the key is at `/etc/letsencrypt/live/thephish.example.com/privkey.pem`
 * Services bound to these ports: ThePhish-NG: `127.0.0.1:8080`, TheHive: `127.0.0.1:9000`, Cortex: `127.0.0.1:9001`, MISP: `127.0.0.1:9443`
 
 ### Install Nginx Using the nginx.org Repository
@@ -284,9 +312,9 @@ EOF
 
 After writing the configuration, run `sudo nginx -t` to check for syntax errors.
 
-### Create Nginx hosts for TheHive, Cortex, and MISP
+### Create Nginx Virtual Hosts for TheHive, Cortex, and MISP
 
-If you already have one or more of these behind a reverse proxy, you can skip their hosts here.
+If you already have one or more of these services behind a reverse proxy, you can skip their virtual host configurations here.
 
 Replace each `server_name` and certificate path with your values.
 
@@ -396,7 +424,7 @@ server {
         
         add_header              Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         proxy_pass              https://127.0.0.1:9443/;
-        # MISP forces a HTTP -> HTTPS redirect and uses a self-signed certificate.
+        # MISP forces an HTTP-to-HTTPS redirect and uses a self-signed certificate.
         proxy_ssl_verify off;
         proxy_http_version      1.1;
     }
@@ -404,7 +432,7 @@ server {
 EOF
 ```
 
-### Nginx host for ThePhish-NG
+### Nginx Virtual Host for ThePhish-NG
 
 Replace the `server_name` and certificate paths with your values.
 
@@ -443,7 +471,7 @@ server {
 EOF
 ```
 
-### Verify config and restart Nginx
+### Verify the Configuration and Restart Nginx
 
 ```bash
 sudo nginx -t
@@ -454,21 +482,7 @@ sudo systemctl restart nginx
 
 This section assumes TheHive, Cortex, and MISP are reachable and you created admin accounts with secure passwords.
 
-### Configure TheHive
-
-#### Request Community License
-
-Starting with TheHive 5.3, a valid license is required.
-
-New installations include a 14-day Platinum trial. After that you need to request a free community license.
-I recommend you request it early because StrangeBee can take some time to review your registration.
-
-You can find a detailed tutorial on how to request and activate such a license on the StrangeBee website:
-
-* Request a Community License: https://docs.strangebee.com/thehive/installation/licenses/request-a-community-license/
-* Activate or Update a License: https://docs.strangebee.com/thehive/installation/licenses/license/
-
-#### Configure Cortex and MISP connection
+### Configure MISP
 
 TODO
 
@@ -476,16 +490,213 @@ TODO
 
 TODO
 
-### Configure MISP
+### Configure TheHive
+
+#### Request Community License
+
+Starting with TheHive 5.3, a valid license is required.
+
+New installations include a 14-day Platinum trial. After that, you need to request a free community license.
+I recommend requesting it early because StrangeBee can take some time to review your registration.
+
+You can find detailed instructions for requesting and activating a license on the StrangeBee website:
+
+* [Request a Community License](https://docs.strangebee.com/thehive/installation/licenses/request-a-community-license/)
+* [Activate or Update a License](https://docs.strangebee.com/thehive/installation/licenses/license/)
+
+#### Configure Cortex and MISP connections
 
 TODO
 
 ## Deploy ThePhish-NG
 
-### Deploy using docker compose
+If you haven't already done so, create a directory owned by your user in `/opt`:
 
-TODO
+```bash
+sudo mkdir -p /opt/thephish-stack
+sudo chown -R "$USER:$(id -gn)" /opt/thephish-stack
+cd /opt/thephish-stack
+```
 
-### Deploy natively
+Clone the ThePhish-NG GitHub repository and change into the repository directory:
 
-TODO
+```bash
+git clone https://github.com/dead-plant/ThePhish-NG.git thephish-ng
+git -C thephish-ng rev-parse HEAD
+cd thephish-ng
+```
+
+Edit the ThePhish-NG configuration files.
+First, copy the `config-example` directory:
+
+```bash
+# Copy example config
+cp -a ./config-example ./config
+
+# Set strict permissions
+chmod 600 config/app.conf
+```
+
+For ThePhish-NG to work, you have to adjust at least the `[webapp]`, `[imap]`, and `[thehive]` sections in `app.conf`.
+
+For a native deployment, edit the `[redis]` section in `app.conf` and set the Redis URLs to `127.0.0.1`.
+The hostname `redis` only works with Docker Compose.
+
+```toml
+[redis]
+url = "redis://127.0.0.1:6379/0"
+key_prefix = "thephish"
+celery_broker_url = "redis://127.0.0.1:6379/1"
+celery_result_backend_url = "redis://127.0.0.1:6379/2"
+```
+
+For a production setup, I recommend reviewing the remaining configuration options.
+Additional documentation for the configuration files is available at [docs/configuration.md](configuration.md).
+
+From here, you can deploy ThePhish-NG either with Docker Compose or natively on the host with a systemd service.
+For most users, I recommend using Docker Compose.
+
+* [Deploy using Docker Compose](#deploy-using-docker-compose)
+* [Deploy natively with systemd service](#deploy-natively-with-systemd-service)
+
+### Deploy using Docker Compose
+
+At this point, start the Docker Compose stack:
+
+```bash
+docker compose pull
+
+docker compose up -d
+```
+
+Then restart Nginx:
+
+```bash
+sudo systemctl restart nginx
+```
+
+You should now be able to reach ThePhish-NG in your browser.
+
+Next take a look at the usage example: [docs/usage-example.md](usage-example.md).
+
+### Deploy natively with systemd service
+
+#### Install requirements
+
+First, install `libmagic`:
+
+```bash
+sudo apt install libmagic1
+```
+
+Next, install Python 3, create a virtual environment, and install the requirements.
+Make sure you are in the application directory containing `run.py` and `requirements.txt`:
+
+```bash
+sudo apt install python3 python3-venv python3-pip
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+#### Set Up Redis
+
+Choose one of the following options.
+
+##### Start Redis with Docker (recommended)
+
+```bash
+docker volume create redis-data
+
+docker run -d \
+  --name redis \
+  --restart unless-stopped \
+  -p 127.0.0.1:6379:6379 \
+  -v redis-data:/data \
+  --security-opt no-new-privileges:true \
+  redis:8-alpine \
+  redis-server --appendonly yes --save "900 1" --maxmemory-policy noeviction
+```
+
+##### Install Redis on the host
+
+```bash
+# Install Redis package
+sudo apt install redis-server
+
+# Backup default Redis configuration
+sudo cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
+
+# Configure Redis
+sudo sed -i \
+  -e 's/^appendonly no$/appendonly yes/' \
+  -e 's/^# *maxmemory-policy .*/maxmemory-policy noeviction/' \
+  -e 's/^bind .*/bind 127.0.0.1 -::1/' \
+  -e '/^save /d' \
+  /etc/redis/redis.conf
+
+echo 'save 900 1' | sudo tee -a /etc/redis/redis.conf
+
+# Restart Redis server
+sudo systemctl restart redis-server
+```
+
+#### Set Up the systemd Service
+
+Create a new system user for ThePhish-NG and give it ownership of the application directory:
+
+```bash
+sudo groupadd --system thephish-ng
+sudo useradd --system --gid thephish-ng --no-create-home --shell /usr/sbin/nologin thephish-ng
+sudo chown -R thephish-ng:thephish-ng /opt/thephish-stack/thephish-ng
+```
+
+Next, create a service file:
+
+```bash
+sudo tee /etc/systemd/system/thephish-ng.service > /dev/null << 'EOF'
+[Unit]
+Description=ThePhish-NG Python Application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=thephish-ng
+Group=thephish-ng
+WorkingDirectory=/opt/thephish-stack/thephish-ng
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/thephish-stack/thephish-ng/.venv/bin/python -u run.py --config-dir ./config --bind-addr 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=thephish-ng
+
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+Enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now thephish-ng
+```
+
+Finally, restart Nginx:
+
+```bash
+sudo systemctl restart nginx
+```
+
+ThePhish-NG should now be reachable in your browser.
+
+Next take a look at the usage example: [docs/usage-example.md](usage-example.md).
