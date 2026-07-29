@@ -22,6 +22,9 @@ It handles the full analysis flow from extracting observables, running the appli
 * [Additional Documentation](#additional-documentation)
 * [External References](#external-references)
 * [Highlighted Features](#highlighted-features)
+* [Implementation](#implementation)
+  * [Architecture](#architecture)
+  * [Description](#description)
 * [Credits](#credits)
 * [License](#license)
 
@@ -51,6 +54,20 @@ It handles the full analysis flow from extracting observables, running the appli
 * Automatic verdicts and IoC marking
 * Exports malicious cases to MISP and keeps suspicious cases open for review
 * Start and result emails with a log and link to the web view
+
+## Implementation
+
+### Architecture
+
+<div>
+  <p align="center">
+    <img src="docs/img/application-architecture.png" width="800" alt="ThePhish-NG Application Architecture"> 
+  </p>
+</div>
+
+### Description
+
+TODO
 
 ## Credits
 
