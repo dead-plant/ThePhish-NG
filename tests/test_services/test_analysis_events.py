@@ -77,7 +77,7 @@ class TestEmittedEventsAndOrdering:
     def test_notifier_failure_emits_warning(self, monkeypatch, events):
         ResponderStub(monkeypatch, [])
         Notifier(events).send_analysis_started(
-            BuiltCase(case=BUILT.case, task_ids={"ThePhish notification": "task-notif"}), "user@example.com"
+            BuiltCase(case=BUILT.case, task_ids={"ThePhish notification": "task-notif"}), "user@example.com", "aid123"
         )
 
         assert events.events == [("warning", "Could not send the notification email: no mail responder is enabled")]

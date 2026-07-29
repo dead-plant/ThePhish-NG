@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+	buildTheHiveCaseUrl,
 	createAnalysisController,
 	createAnalysisView,
 	installAnalysisLifecycle,
@@ -55,6 +56,7 @@ function createView() {
 	return {
 		actions: [],
 		alert: null,
+		case: null,
 		connectionWarning: false,
 		entries: [],
 		failure: null,
@@ -63,6 +65,10 @@ function createView() {
 		verdict: null,
 		clearAlert() {
 			this.alert = null;
+		},
+		showCase(caseId, caseNumber) {
+			this.case = {caseId, caseNumber};
+			this.actions.push("case");
 		},
 		setStatus(status) {
 			this.statuses.push(status);
@@ -216,6 +222,35 @@ test("finished direct load renders sorted history and verdict without a stream",
 	assert.equal(FakeEventSource.instances.length, 0);
 });
 
+test("completed direct load reveals its stored TheHive case without a stream", async () => {
+	FakeEventSource.instances = [];
+	const view = createView();
+	const controller = createAnalysisController({
+		analysisId: "completed-case",
+		fetchFn: fetchSequence([
+			jsonResponse(200, {
+				analysis_id: "completed-case",
+				mail_uid: 9,
+				status: "finished",
+				created_at: "2026-07-29T10:00:00.000+00:00",
+				started_at: "2026-07-29T10:00:01.000+00:00",
+				finished_at: "2026-07-29T10:01:00.000+00:00",
+				case_id: "~4628603072",
+				case_number: "42",
+				verdict: "Safe",
+			}),
+			jsonResponse(200, []),
+		], []),
+		EventSourceCtor: FakeEventSource,
+		view,
+	});
+
+	await controller.load();
+
+	assert.deepEqual(view.case, {caseId: "~4628603072", caseNumber: "42"});
+	assert.equal(FakeEventSource.instances.length, 0);
+});
+
 test("running load follows SSE, de-duplicates replay, reconnects, and closes on terminal status", async () => {
 	FakeEventSource.instances = [];
 	const view = createView();
@@ -280,6 +315,46 @@ test("terminal status preserves a manually scrolled live log position", async ()
 	assert.deepEqual(view.actions, ["check-tail", "verdict:Safe"]);
 });
 
+test("running analysis reveals live case data and preserves it at completion", async () => {
+	FakeEventSource.instances = [];
+	const view = createView();
+	const controller = createAnalysisController({
+		analysisId: "live-case",
+		fetchFn: fetchSequence([
+			jsonResponse(200, {
+				analysis_id: "live-case",
+				mail_uid: 9,
+				status: "running",
+				created_at: "2026-07-29T10:00:00.000+00:00",
+				started_at: "2026-07-29T10:00:01.000+00:00",
+			}),
+			jsonResponse(200, []),
+		], []),
+		EventSourceCtor: FakeEventSource,
+		view,
+	});
+
+	await controller.load();
+	assert.equal(view.case, null);
+
+	const source = FakeEventSource.instances[0];
+	source.emit("status", {
+		type: "status",
+		status: "running",
+		case_id: "~4628603072",
+		case_number: "42",
+	});
+	assert.deepEqual(view.case, {caseId: "~4628603072", caseNumber: "42"});
+
+	source.emit("status", {
+		type: "status",
+		status: "finished",
+		verdict: "Suspicious",
+	});
+	assert.deepEqual(view.case, {caseId: "~4628603072", caseNumber: "42"});
+	assert.equal(source.closed, true);
+});
+
 test("failed direct load shows persisted error and never opens a stream", async () => {
 	FakeEventSource.instances = [];
 	const view = createView();
@@ -297,10 +372,41 @@ test("failed direct load shows persisted error and never opens a stream", async 
 
 	assert.equal(view.failure, "Analyzer service failed");
 	assert.equal(view.statuses.at(-1), "failed");
+	assert.equal(view.case, null);
 	assert.deepEqual(
 		view.actions.slice(-3),
 		["check-tail", "failure", "scroll-after-layout"],
 	);
+	assert.equal(FakeEventSource.instances.length, 0);
+});
+
+test("failed direct load reveals a case created before the failure", async () => {
+	FakeEventSource.instances = [];
+	const view = createView();
+	const controller = createAnalysisController({
+		analysisId: "failed-with-case",
+		fetchFn: fetchSequence([
+			jsonResponse(200, {
+				analysis_id: "failed-with-case",
+				mail_uid: 9,
+				status: "failed",
+				created_at: "2026-07-29T10:00:00.000+00:00",
+				started_at: "2026-07-29T10:00:01.000+00:00",
+				finished_at: "2026-07-29T10:01:00.000+00:00",
+				case_id: "~4628603072",
+				case_number: "42",
+				error: "Analyzer service failed",
+			}),
+			jsonResponse(200, []),
+		], []),
+		EventSourceCtor: FakeEventSource,
+		view,
+	});
+
+	await controller.load();
+
+	assert.deepEqual(view.case, {caseId: "~4628603072", caseNumber: "42"});
+	assert.equal(view.failure, "Analyzer service failed");
 	assert.equal(FakeEventSource.instances.length, 0);
 });
 
@@ -331,6 +437,54 @@ test("malformed log entries are rejected while valid text is preserved", () => {
 		normalizeLogEntry({seq: 2, timestamp: "now", level: "odd", message: "<script>"}),
 		{seq: 2, timestamp: "now", level: "odd", message: "<script>"},
 	);
+});
+
+test("TheHive case URL normalizes the base and encodes one path component", () => {
+	assert.equal(
+		buildTheHiveCaseUrl(" https://thehive.example.test/soc/// ", "~case/one"),
+		"https://thehive.example.test/soc/cases/~case%2Fone/details",
+	);
+	assert.equal(
+		buildTheHiveCaseUrl("https://thehive.example.test/soc", "~case1"),
+		"https://thehive.example.test/soc/cases/~case1/details",
+	);
+	assert.equal(buildTheHiveCaseUrl("", "~case1"), null);
+	assert.equal(buildTheHiveCaseUrl("https://thehive.example.test", "  "), null);
+});
+
+test("analysis view reveals and labels the exact TheHive case", () => {
+	const {document, elements} = createAnalysisDocument({
+		theHiveBaseUrl: "https://thehive.example.test/soc/",
+	});
+	const view = createAnalysisView(document);
+
+	view.showCase("~case/one", " 42 ");
+
+	assert.equal(
+		elements.analysisCaseLink.attributes.href,
+		"https://thehive.example.test/soc/cases/~case%2Fone/details",
+	);
+	assert.equal(elements.analysisCaseLinkText.textContent, "Open TheHive case #42");
+	assert.equal(elements.analysisCaseLink.classList.contains("d-none"), false);
+});
+
+test("analysis view keeps the case action hidden when link data is incomplete", () => {
+	const missingBase = createAnalysisDocument({theHiveBaseUrl: ""});
+	createAnalysisView(missingBase.document).showCase("~case1", "42");
+	assert.equal(missingBase.elements.analysisCaseLink.classList.contains("d-none"), true);
+
+	const missingCase = createAnalysisDocument();
+	createAnalysisView(missingCase.document).showCase("", "42");
+	assert.equal(missingCase.elements.analysisCaseLink.classList.contains("d-none"), true);
+});
+
+test("analysis view uses a case-label fallback when the number is absent", () => {
+	const {document, elements} = createAnalysisDocument();
+
+	createAnalysisView(document).showCase("~case1", null);
+
+	assert.equal(elements.analysisCaseLinkText.textContent, "Open TheHive case");
+	assert.equal(elements.analysisCaseLink.classList.contains("d-none"), false);
 });
 
 test("analysis lifecycle reloads when a disposed page returns from BFCache", () => {

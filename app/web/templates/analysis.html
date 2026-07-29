@@ -43,9 +43,22 @@
 						<h1 id="analysisResultTitle" class="analysis-result-title"></h1>
 						<p id="analysisResultMessage" class="analysis-result-message"></p>
 					</section>
-					<a class="card-link btn btn-primary border rounded analysis-back-link" href="/">
-						<i class="fa fa-arrow-left" aria-hidden="true"></i>&nbsp; Go back to analyze a new e-mail
-					</a>
+					<div class="analysis-actions">
+						<a class="card-link btn btn-primary border rounded analysis-back-link" href="/">
+							<i class="fa fa-arrow-left" aria-hidden="true"></i>&nbsp; Go back to analyze a new e-mail
+						</a>
+						<a
+							id="analysisCaseLink"
+							class="card-link btn btn-primary border rounded analysis-case-link d-none"
+							href=""
+							data-thehive-base-url="{{ webapp_thehive_url or '' }}"
+							target="_blank"
+							rel="noopener noreferrer"
+						>
+							<i class="fa fa-external-link" aria-hidden="true"></i>&nbsp;
+							<span id="analysisCaseLinkText">Open TheHive case</span>
+						</a>
+					</div>
 				</div>
 			</main>
 		</div>

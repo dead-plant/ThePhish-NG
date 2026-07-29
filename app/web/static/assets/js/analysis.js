@@ -21,6 +21,18 @@
 	const loadFallback = "The analysis could not be loaded. Please try again later.";
 	const failureFallback = "The analysis failed without a recorded error.";
 
+	function buildTheHiveCaseUrl(baseUrl, caseId) {
+		if (typeof baseUrl !== "string" || typeof caseId !== "string") {
+			return null;
+		}
+		const normalizedBase = baseUrl.trim().replace(/\/+$/, "");
+		const normalizedCaseId = caseId.trim();
+		if (!normalizedBase || !normalizedCaseId) {
+			return null;
+		}
+		return `${normalizedBase}/cases/${encodeURIComponent(normalizedCaseId)}/details`;
+	}
+
 	class DisplayError extends Error {}
 
 	async function readJson(response) {
@@ -79,6 +91,19 @@
 			}
 		}
 
+		function applyCaseData(state) {
+			if (
+				typeof state.case_id !== "string"
+				|| !state.case_id.trim()
+			) {
+				return;
+			}
+			view.showCase(
+				state.case_id,
+				typeof state.case_number === "string" ? state.case_number : null,
+			);
+		}
+
 		function addLogEntry(rawEntry) {
 			const entry = normalizeLogEntry(rawEntry);
 			if (disposed || !entry || renderedSequences.has(entry.seq)) {
@@ -129,6 +154,7 @@
 			if (!state || typeof state.status !== "string") {
 				throw new DisplayError(loadFallback);
 			}
+			applyCaseData(state);
 			if (terminalStatuses.has(state.status)) {
 				showTerminalState(state);
 				return;
@@ -160,6 +186,7 @@
 					return;
 				}
 				try {
+					applyCaseData(data);
 					if (terminalStatuses.has(data.status)) {
 						showTerminalState(data);
 					} else if (activeStatuses.has(data.status)) {
@@ -244,6 +271,9 @@
 		const result = document.getElementById("analysisResult");
 		const resultTitle = document.getElementById("analysisResultTitle");
 		const resultMessage = document.getElementById("analysisResultMessage");
+		const caseLink = document.getElementById("analysisCaseLink");
+		const caseLinkText = document.getElementById("analysisCaseLinkText");
+		const theHiveBaseUrl = caseLink.dataset.thehiveBaseUrl;
 
 		const statusLabels = {
 			loading: "Loading analysis…",
@@ -262,6 +292,21 @@
 		function clearAlert() {
 			alert.textContent = "";
 			alert.className = "alert d-none analysis-alert";
+		}
+
+		function showCase(caseId, caseNumber) {
+			const url = buildTheHiveCaseUrl(theHiveBaseUrl, caseId);
+			if (!url) {
+				return;
+			}
+			const normalizedCaseNumber = typeof caseNumber === "string"
+				? caseNumber.trim()
+				: "";
+			caseLink.setAttribute("href", url);
+			caseLinkText.textContent = normalizedCaseNumber
+				? `Open TheHive case #${normalizedCaseNumber}`
+				: "Open TheHive case";
+			caseLink.classList.remove("d-none");
 		}
 
 		function setStatus(value) {
@@ -331,6 +376,7 @@
 
 		return {
 			clearAlert,
+			showCase,
 			setStatus,
 			insertLogEntry,
 			isLogNearBottom,
@@ -369,6 +415,7 @@
 	}
 
 	return {
+		buildTheHiveCaseUrl,
 		createAnalysisController,
 		createAnalysisView,
 		installAnalysisLifecycle,

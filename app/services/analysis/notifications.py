@@ -23,8 +23,9 @@ from app.services.analysis.events import EventSink
 
 log = logging.getLogger(__name__)
 
-# template of link included at the top of every result email, should link to the web view of the analysis
-RESULT_LINK_TEMPLATE: Final = "{base_url}/analysis/{analysis_id}"
+# Template of the link included at the top of every analysis email.
+ANALYSIS_LINK_LABEL: Final = "View the analysis in ThePhish-NG:"
+ANALYSIS_LINK_TEMPLATE: Final = "{base_url}/analysis/{analysis_id}"
 
 _PHISHMAILER_PREFIX: Final = "PhishMailer"
 _MAILER_PREFIX: Final = "Mailer"
@@ -110,14 +111,20 @@ class Notifier:
     def __init__(self, events: EventSink) -> None:
         self._events = events
 
-    def send_analysis_started(self, built: BuiltCase, recipient: str) -> None:
+    def send_analysis_started(self, built: BuiltCase, recipient: str, analysis_id: str) -> None:
         """Notify the reporter that the analysis of their email has started."""
         title = built.case["title"].removeprefix(CASE_TITLE_PREFIX)
+        body_lines = [
+            ANALYSIS_LINK_LABEL,
+            ANALYSIS_LINK_TEMPLATE.format(base_url=config.get_app_config()["webapp"]["base_url"], analysis_id=analysis_id),
+            "",
+            ioc_fanger.defang(f"Thanks for the submission. Your e-mail with subject [{title}] is being analyzed."),
+        ]
         self._send_task_mail(
             task_id=built.task_ids.get(NOTIFICATION_TASK),
             recipient=recipient,
             subject=f"ThePhish: your reported email [{title}] is being analyzed",
-            body=ioc_fanger.defang(f"Thanks for the submission. Your e-mail with subject [{title}] is being analyzed."),
+            body="\n".join(body_lines),
             mail_label="notification email",
         )
 
@@ -132,7 +139,8 @@ class Notifier:
         """
         title = built.case["title"].removeprefix(CASE_TITLE_PREFIX)
         body_lines = [
-            RESULT_LINK_TEMPLATE.format(base_url=config.get_app_config()["webapp"]["base_url"], analysis_id=analysis_id),
+            ANALYSIS_LINK_LABEL,
+            ANALYSIS_LINK_TEMPLATE.format(base_url=config.get_app_config()["webapp"]["base_url"], analysis_id=analysis_id),
             "",
             f"Final verdict: {outcome.verdict}",
             "",

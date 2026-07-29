@@ -46,6 +46,25 @@ def test_analysis_page_renders_layout_and_configured_links(client, monkeypatch):
     }
 
 
+def test_analysis_page_renders_hidden_thehive_case_action(client, monkeypatch):
+    _set_webapp_links(monkeypatch)
+
+    response = client.get("/analysis/aid123")
+
+    assert response.status_code == 200
+    page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+    actions = page.select_one(".analysis-actions")
+    assert actions is not None
+    case_link = actions.select_one("#analysisCaseLink")
+    assert actions.select_one('a.analysis-back-link[href="/"]') is not None
+    assert case_link is not None
+    assert "d-none" in case_link.get("class", [])
+    assert case_link["data-thehive-base-url"] == "https://thehive.example.test"
+    assert case_link["target"] == "_blank"
+    assert set(case_link["rel"]) == {"noopener", "noreferrer"}
+    assert case_link.select_one("#analysisCaseLinkText").get_text(strip=True) == "Open TheHive case"
+
+
 def test_analysis_page_escapes_analysis_id(client, monkeypatch):
     _set_webapp_links(monkeypatch)
     injected_id = '<img src=x onerror="alert(1)">'

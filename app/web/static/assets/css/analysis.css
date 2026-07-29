@@ -147,10 +147,22 @@
 	background: rgb(221, 75, 57);
 }
 
-.analysis-back-link {
-	align-self: flex-start;
+.analysis-actions {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1rem;
+	justify-content: space-between;
+}
+
+.analysis-back-link,
+.analysis-case-link {
 	background: rgb(40, 106, 149);
 	font-size: 1.1rem;
+}
+
+.analysis-case-link {
+	margin-left: auto;
 }
 
 @media (max-width: 767.98px) {

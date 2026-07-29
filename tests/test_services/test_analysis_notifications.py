@@ -57,7 +57,7 @@ def notifier(alogger):
 class TestResponderSelection:
     def test_phishmailer_is_preferred(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [MAILER, PHISHMAILER])
-        notifier.send_analysis_started(BUILT, "user@example.com")
+        notifier.send_analysis_started(BUILT, "user@example.com", "aid123")
 
         assert stub.actions == [{"responder_id": "id-phishmailer", "object_type": "case_task", "object_id": "task-notif"}]
         directive = stub.task_updates[0][1]["description"].splitlines()[0]
@@ -67,7 +67,7 @@ class TestResponderSelection:
 
     def test_fallback_to_standard_mailer(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [MAILER])
-        notifier.send_analysis_started(BUILT, "user@example.com")
+        notifier.send_analysis_started(BUILT, "user@example.com", "aid123")
 
         assert stub.actions[0]["responder_id"] == "id-mailer"
         description = stub.task_updates[0][1]["description"]
@@ -76,7 +76,7 @@ class TestResponderSelection:
 
     def test_no_responder_available(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [])
-        notifier.send_analysis_started(BUILT, "user@example.com")
+        notifier.send_analysis_started(BUILT, "user@example.com", "aid123")
 
         assert stub.actions == []
         assert any(entry["level"] == "warning" and "no mail responder" in entry["message"] for entry in alogger.entries)
@@ -86,7 +86,7 @@ class TestInputSafety:
     def test_recipient_is_normalized_without_deliverability_check(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
 
-        notifier.send_analysis_started(BUILT, "User@NONEXISTENT-DOMAIN-7F9CC67.COM")
+        notifier.send_analysis_started(BUILT, "User@NONEXISTENT-DOMAIN-7F9CC67.COM", "aid123")
 
         directive = stub.task_updates[0][1]["description"].splitlines()[0]
         assert "mailto:User@nonexistent-domain-7f9cc67.com;" in directive
@@ -104,7 +104,7 @@ class TestInputSafety:
     ])
     def test_unsafe_recipients_are_rejected(self, monkeypatch, notifier, alogger, recipient):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
-        notifier.send_analysis_started(BUILT, recipient)
+        notifier.send_analysis_started(BUILT, recipient, "aid123")
 
         assert stub.task_updates == [] and stub.actions == []
         assert any("not a safe email address" in entry["message"] for entry in alogger.entries)
@@ -123,10 +123,23 @@ class TestInputSafety:
     def test_directive_stays_intact_with_hostile_case_title(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
         built = BuiltCase(case={"_id": "c", "number": 2, "title": '[ThePhish] evil"; mailto:attacker@evil.test;'}, task_ids=BUILT.task_ids)
-        notifier.send_analysis_started(built, "user@example.com")
+        notifier.send_analysis_started(built, "user@example.com", "aid123")
 
         directive = stub.task_updates[0][1]["description"].splitlines()[0]
         assert re.fullmatch(r'#PhishMailer; subject: "[^"]+"; mailto:user@example\.com;', directive)
+
+
+class TestStartEmail:
+    def test_start_email_contains_analysis_link(self, monkeypatch, notifier):
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+
+        notifier.send_analysis_started(BUILT, "user@example.com", "aid123")
+
+        lines = stub.task_updates[0][1]["description"].splitlines()
+        assert lines[1:3] == [
+            "View the analysis in ThePhish-NG:",
+            "https://thephish.example.com/analysis/aid123",
+        ]
 
 
 class TestResultEmail:
@@ -140,8 +153,11 @@ class TestResultEmail:
 
         body = stub.task_updates[0][1]["description"]
         lines = body.splitlines()
-        # the placeholder link sits at the top of the email body (below the directive line)
-        assert lines[1] == "https://thephish.example.com/analysis/aid123"
+        # the labeled link sits at the top of the email body (below the directive line)
+        assert lines[1:3] == [
+            "View the analysis in ThePhish-NG:",
+            "https://thephish.example.com/analysis/aid123",
+        ]
         assert "Final verdict: Malicious" in lines
         assert "Analyzer reports: 3 collected, 1 failed" in lines
         assert "Malicious: X on domain evil[.]test" in lines  # summary lines are defanged
@@ -179,7 +195,7 @@ class TestResultEmail:
 class TestFailureHandling:
     def test_responder_failure_is_a_warning(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER], action_status="Failure")
-        notifier.send_analysis_started(BUILT, "user@example.com")
+        notifier.send_analysis_started(BUILT, "user@example.com", "aid123")
 
         assert any("could not be delivered" in entry["message"] for entry in alogger.entries)
         assert stub.task_updates[-1] == ("task-notif", {"status": "Completed"})
@@ -193,7 +209,7 @@ class TestFailureHandling:
     def test_missing_task_is_a_warning(self, monkeypatch, notifier, alogger):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
         built = BuiltCase(case=BUILT.case, task_ids={})
-        notifier.send_analysis_started(built, "user@example.com")
+        notifier.send_analysis_started(built, "user@example.com", "aid123")
 
         assert stub.actions == []
         assert any("the case task is missing" in entry["message"] for entry in alogger.entries)

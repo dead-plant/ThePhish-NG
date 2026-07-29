@@ -139,7 +139,13 @@ class FakeDocument {
 	}
 }
 
-function createAnalysisDocument({requestAnimationFrame} = {}) {
+function createAnalysisDocument({
+	requestAnimationFrame,
+	theHiveBaseUrl = "https://thehive.example.test",
+} = {}) {
+	const analysisCaseLink = new FakeElement("a");
+	analysisCaseLink.className = "analysis-case-link d-none";
+	analysisCaseLink.dataset.thehiveBaseUrl = theHiveBaseUrl;
 	const elements = {
 		analysisStatus: new FakeElement(),
 		analysisAlert: new FakeElement(),
@@ -148,6 +154,8 @@ function createAnalysisDocument({requestAnimationFrame} = {}) {
 		analysisResult: new FakeElement(),
 		analysisResultTitle: new FakeElement(),
 		analysisResultMessage: new FakeElement(),
+		analysisCaseLink,
+		analysisCaseLinkText: new FakeElement("span"),
 	};
 	const defaultView = requestAnimationFrame ? {requestAnimationFrame} : null;
 	return {

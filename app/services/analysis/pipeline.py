@@ -125,7 +125,7 @@ def _run_workflow(analysis_id: str, mail_uid: int, alogger: AnalysisLogger) -> s
     built = builder.build_case(internal_msg)
     tracking.set_state_fields(analysis_id, case_id=built.case["_id"], case_number=str(built.case["number"]))
 
-    notifier.send_analysis_started(built, reporter_address)
+    notifier.send_analysis_started(built, reporter_address, analysis_id)
 
     outcome = runner.run(built)
     alogger.info(f"The email has been classified as {outcome.verdict}")
