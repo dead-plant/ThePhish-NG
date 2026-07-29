@@ -1,0 +1,441 @@
+# Based on the build workflow from TheHive-Project/Cortex-Analyzers
+# https://github.com/TheHive-Project/Cortex-Analyzers/blob/develop/.github/workflows/build.yml
+# Original work Copyright (C) TheHive Project — licensed under AGPL-3.0
+# Adapted for ThePhish-NG by dead-plant, 2026-07-19:
+#   single application image (no analyzers/responders/catalog/gh-pages),
+#   version derived from the git tag, Discord notifications,
+#   failure-gated release, hard-failing import smoke test
+# This file remains licensed under AGPL-3.0.
+
+name: build
+
+on:
+  push:
+    branches:
+      - develop
+    tags:
+      - "v*"
+  workflow_dispatch:
+  schedule:
+    # Monthly forced rebuild (picks up base-image & security updates):
+    # first day of the month at 08:42 UTC
+    - cron: "42 8 1 * *"
+
+# Least privilege by default; individual jobs elevate only what they need.
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan builds
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      count: ${{ steps.set-matrix.outputs.count }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history + tags: scheduled runs need to find the newest release tag.
+          fetch-depth: 0
+
+      - name: Decide which variants to build
+        id: set-matrix
+        run: |
+          # Variants:
+          #   stable -> built from a release tag, published as :X, :X.Y, :X.Y.Z, :latest
+          #   devel  -> built from the develop branch, published as :devel
+          #
+          #   push of a tag     -> stable only (that tag)
+          #   push to develop   -> devel only
+          #   schedule / manual -> refresh BOTH: the newest release tag and devel
+          stable_ref=""
+          devel_ref=""
+
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/* ]]; then
+            stable_ref="$GITHUB_REF_NAME"
+          elif [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            devel_ref="$GITHUB_REF_NAME"
+          else
+            stable_ref=$(git tag --list --sort=-version:refname \
+              | grep -E '^v?[0-9]+(\.[0-9]+)*$' | head -n1 || true)
+            if [ -z "$stable_ref" ]; then
+              echo "No release tags yet — skipping stable refresh."
+            fi
+            if git ls-remote --exit-code --heads origin develop >/dev/null 2>&1; then
+              devel_ref="develop"
+            else
+              echo "No develop branch — skipping devel refresh."
+            fi
+          fi
+
+          matrix=$(jq -nc --arg s "$stable_ref" --arg d "$devel_ref" '
+            {include: ([
+              (if $s != "" then {kind: "stable", ref: $s} else empty end),
+              (if $d != "" then {kind: "devel",  ref: $d} else empty end)
+            ])}')
+
+          echo "Build plan: $matrix"
+          {
+            echo "matrix=$matrix"
+            echo "count=$(jq '.include | length' <<<"$matrix")"
+          } >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Run tests
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ matrix.ref }}
+
+      - name: Run test suite (if present)
+        run: |
+          # No-op until tests exist: pytest's default discovery patterns
+          # (test_*.py / *_test.py) anywhere under tests/, recursively.
+          if [ ! -d tests ] || \
+             ! find tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) | grep -q .; then
+            echo "No tests found under tests/ — nothing to run."
+            exit 0
+          fi
+
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet --upgrade pip
+          .venv/bin/pip install --quiet -r requirements.txt pytest
+          # Optional extra test-only dependencies (mocks, fixtures, plugins):
+          if [ -f tests/requirements.txt ]; then
+            .venv/bin/pip install --quiet -r tests/requirements.txt
+          fi
+
+          .venv/bin/python -m pytest tests/ -v
+
+  build:
+    name: Build image
+    # Default needs-semantics: this job only runs when 'test' succeeded
+    # (a test failure or an empty build plan skips it), so no image is
+    # ever pushed — and thus no release made — while tests are red.
+    needs: [plan, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    strategy:
+      # Keep building the other variant when one fails; the failed entry
+      # makes this job report 'failure', which blocks the release.
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    env:
+      KIND: ${{ matrix.kind }}
+      REF: ${{ matrix.ref }}
+      PLATFORMS: linux/amd64,linux/arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ matrix.ref }}
+
+      - name: GHCR Login
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image metadata
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          description="ThePhish-NG — automated phishing email analysis"
+
+          if [ "$KIND" = "stable" ]; then
+            # Version comes straight from the git tag (optional leading 'v'
+            # stripped). Cumulative tags: 1.0.3 -> :1, :1.0, :1.0.3, :latest
+            version="${REF#v}"
+            if [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+              tags=""
+              prefix=""
+              IFS=. read -ra parts <<<"$version"
+              for p in "${parts[@]}"; do
+                prefix="${prefix:+${prefix}.}${p}"
+                tags="${tags:+${tags},}${image}:${prefix}"
+              done
+              tags="${tags},${image}:latest"
+            else
+              echo "::warning::Tag '$REF' is not numeric — publishing it as a single image tag."
+              tags="${image}:${version}"
+            fi
+          else
+            version="devel"
+            tags="${image}:devel"
+          fi
+
+          {
+            echo "IMAGE=${image}"
+            echo "VERSION=${version}"
+            echo "IMAGE_TAGS=${tags}"
+            # Most specific tag; used for the Trivy scan and the smoke test.
+            echo "PRIMARY_TAG=${version}"
+            echo "DESCRIPTION=${description}"
+            echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } >> "$GITHUB_ENV"
+          echo "Building ${image} (${KIND}, ref ${REF}) with tags: ${tags}"
+
+      # Only install QEMU when arm64 is targeted
+      - name: Set up QEMU
+        if: contains(env.PLATFORMS, 'linux/arm64')
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build and push multi-arch image to GHCR
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ env.IMAGE_TAGS }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,scope=shared
+          labels: |
+            org.opencontainers.image.created=${{ env.BUILD_DATE }}
+            org.opencontainers.image.title=thephish-ng
+            org.opencontainers.image.description=${{ env.DESCRIPTION }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          annotations: |
+            org.opencontainers.image.description=${{ env.DESCRIPTION }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=thephish-ng
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+
+      - name: Get image digest for Trivy scan
+        id: get-digest
+        run: |
+          DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${PRIMARY_TAG}" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+          if [ -n "$DIGEST" ]; then
+            IMAGE_REF="${IMAGE}@${DIGEST}"
+          else
+            # Fallback: scan by tag
+            IMAGE_REF="${IMAGE}:${PRIMARY_TAG}"
+          fi
+          echo "IMAGE_DIGEST=$IMAGE_REF" >> "$GITHUB_OUTPUT"
+          echo "Using image reference for Trivy scan: $IMAGE_REF"
+
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        with:
+          image-ref: ${{ steps.get-digest.outputs.IMAGE_DIGEST }}
+          format: sarif
+          output: trivy.sarif
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: 0
+          ignore-unfixed: true
+          timeout: 10m
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-${{ matrix.kind }}
+
+      - name: Test dependency imports in the built image
+        env:
+          IMAGE_REF: ${{ env.IMAGE }}:${{ env.PRIMARY_TAG }}
+        run: |
+          # The check script runs INSIDE the container. The app reads its
+          # config at import time, so we never import first-party code.
+          # Instead: AST-parse every .py file in the source tree, collect the
+          # external (third-party) imports, and try importing each of those —
+          # catching missing pip deps and missing shared libraries (e.g.
+          # libmagic for python-magic) without executing any app code.
+          cat > "$RUNNER_TEMP/import_check.py" <<'PYEOF'
+          import ast
+          import os
+          import sys
+
+          ROOT = os.getcwd()
+
+          # First-party names: top-level .py files and directories in the tree.
+          local = set()
+          for entry in os.listdir(ROOT):
+              if entry.endswith(".py"):
+                  local.add(entry[:-3])
+              elif os.path.isdir(os.path.join(ROOT, entry)):
+                  local.add(entry)
+
+          stdlib = set(sys.stdlib_module_names)
+
+          def collect(node, imports):
+              for child in ast.iter_child_nodes(node):
+                  if isinstance(child, ast.Try):
+                      # Imports inside try/except are optional by design.
+                      continue
+                  if isinstance(child, ast.Import):
+                      imports.update(a.name.split(".")[0] for a in child.names)
+                  elif isinstance(child, ast.ImportFrom):
+                      if child.level == 0 and child.module:
+                          imports.add(child.module.split(".")[0])
+                  else:
+                      collect(child, imports)
+
+          imports = set()
+          for dirpath, dirnames, filenames in os.walk(ROOT):
+              dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+              for fn in filenames:
+                  if not fn.endswith(".py"):
+                      continue
+                  fp = os.path.join(dirpath, fn)
+                  with open(fp, encoding="utf-8") as f:
+                      try:
+                          tree = ast.parse(f.read(), filename=fp)
+                      except SyntaxError as e:
+                          print(f"Syntax error in {fp}: {e}")
+                          sys.exit(1)
+                  collect(tree, imports)
+
+          external = sorted(m for m in imports if m not in local and m not in stdlib)
+          print(f"Checking {len(external)} external imports: {external}")
+
+          failed = False
+          for mod in external:
+              try:
+                  __import__(mod)
+                  print(f"OK   {mod}")
+              except Exception as e:
+                  print(f"FAIL {mod} - {e}")
+                  failed = True
+
+          sys.exit(1 if failed else 0)
+          PYEOF
+
+          status=0
+          for platform in ${PLATFORMS//,/ }; do
+            echo "::group::Import test ($platform)"
+            docker pull --platform "$platform" "$IMAGE_REF" >/dev/null
+            if docker run --rm --platform "$platform" \
+                 -v "$RUNNER_TEMP/import_check.py:/tmp/import_check.py:ro" \
+                 --entrypoint python "$IMAGE_REF" /tmp/import_check.py; then
+              echo "Import test passed ($platform)"
+            else
+              echo "::error title=Import test failed::thephish-ng ($platform)"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $status
+
+  release:
+    name: Make Release
+    needs: build
+    # Tag pushes only, and only when every image variant built and passed
+    # its import test.
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Make Release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+
+  notify:
+    name: Notify
+    needs: [plan, test, build, release]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Determine overall status
+        id: status
+        run: |
+          results=(
+            "${{ needs.plan.result }}"
+            "${{ needs.test.result }}"
+            "${{ needs.build.result }}"
+            "${{ needs.release.result }}"
+          )
+          overall="success"
+          for r in "${results[@]}"; do
+            case "$r" in
+              failure)   overall="failure"; break ;;
+              cancelled) [[ "$overall" != "failure" ]] && overall="cancelled" ;;
+            esac
+          done
+          echo "overall=$overall" >> "$GITHUB_OUTPUT"
+          case "$overall" in
+            success)   echo "color=3066993"  >> "$GITHUB_OUTPUT" ;;  # green
+            failure)   echo "color=15158332" >> "$GITHUB_OUTPUT" ;;  # red
+            cancelled) echo "color=16776960" >> "$GITHUB_OUTPUT" ;;  # yellow
+            *)         echo "color=9807270"  >> "$GITHUB_OUTPUT" ;;  # grey
+          esac
+
+      - name: Discord notification
+        # Notify on every failure, and on tag pushes also on success
+        # (release confirmation). Tune to taste.
+        if: steps.status.outputs.overall != 'success' || startsWith(github.ref, 'refs/tags/')
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          OVERALL: ${{ steps.status.outputs.overall }}
+          COLOR: ${{ steps.status.outputs.color }}
+          # Passed via env (never interpolated into the script) so a crafted
+          # commit message cannot inject shell code.
+          RAW_MSG: ${{ github.event.head_commit.message }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RES_TESTS: ${{ needs.test.result }}
+          RES_BUILD: ${{ needs.build.result }}
+          RES_RELEASE: ${{ needs.release.result }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::warning::DISCORD_WEBHOOK_URL secret is not set — skipping notification."
+            exit 0
+          fi
+
+          commit_msg=$(printf '%s' "$RAW_MSG" | head -n1 | cut -c1-100)
+
+          # jq builds the payload and escapes every value safely.
+          payload=$(jq -n \
+            --arg title "${GITHUB_WORKFLOW} — ${OVERALL}" \
+            --arg url "$RUN_URL" \
+            --argjson color "$COLOR" \
+            --arg desc "Ref: \`${REF_NAME}\`
+          Commit: ${commit_msg}" \
+            --arg t "$RES_TESTS" \
+            --arg b "$RES_BUILD" \
+            --arg r "$RES_RELEASE" \
+            '{
+              embeds: [{
+                title: $title,
+                url: $url,
+                color: $color,
+                description: $desc,
+                fields: [
+                  {name: "Tests",   value: $t, inline: true},
+                  {name: "Build",   value: $b, inline: true},
+                  {name: "Release", value: $r, inline: true}
+                ]
+              }]
+            }')
+
+          curl -sS --fail-with-body \
+            -H 'Content-Type: application/json' \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK_URL"

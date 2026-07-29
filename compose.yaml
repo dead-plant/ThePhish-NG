@@ -1,0 +1,72 @@
+# ThePhish-NG deployment stack.
+#
+# Before the first start, adjust these values in config/app.conf:
+#
+#   [server] bind_addr = "0.0.0.0" (container-internal)
+#
+#   [redis]  url                       = "redis://redis:6379/0"
+#            celery_broker_url         = "redis://redis:6379/1"
+#            celery_result_backend_url = "redis://redis:6379/2"
+
+name: thephish-ng
+
+services:
+  thephish-ng:
+    image: ghcr.io/dead-plant/thephish-ng:1
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    # PID 1 init: reaps the Celery worker child process on shutdown.
+    init: true
+    volumes:
+      - ./config:/thephish/config:ro,z
+    ports:
+      # Bound to localhost for the host Nginx reverse proxy (see docs/setup.md).
+      # Must match [server] port in app.conf.
+      - "127.0.0.1:8080:8080"
+    tmpfs:
+      - /tmp:mode=1777,size=512m
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket,sys; s=socket.create_connection(('127.0.0.1',8080),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - "900 1"
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-data:/data
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  redis-data:
