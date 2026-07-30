@@ -2,7 +2,7 @@ from flask import Flask
 
 from app import config
 from app._version import RELEASE_BASE_URL, __version__
-from app.extensions import celery_init_app
+from app.extensions import celery_init_app, socketio
 
 
 def _release_url_for(version: str) -> str | None:
@@ -34,5 +34,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(web_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
+
+    socketio.init_app(app, async_mode="gevent")
 
     return app

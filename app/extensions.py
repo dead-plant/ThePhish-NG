@@ -1,5 +1,8 @@
 from celery import Celery, Task
 from flask import Flask
+from flask_socketio import SocketIO
+
+socketio = SocketIO()
 
 
 def celery_init_app(app: Flask) -> Celery:
