@@ -291,7 +291,7 @@ If the option for a verdict is disabled, the case remains open.
 send_start = true
 send_result_malicious = true
 send_result_safe = true
-send_result_suspicious = true
+send_result_suspicious = false
 ```
 
 Whether to send an email when an analysis starts and when it finishes with the corresponding verdict.
