@@ -40,6 +40,11 @@ NOTIFICATION_TASK: Final = "ThePhish notification"
 ANALYSIS_TASK: Final = "ThePhish analysis"
 RESULT_TASK: Final = "ThePhish result"
 TASK_TITLES: Final = (NOTIFICATION_TASK, ANALYSIS_TASK, RESULT_TASK)
+_CLOSE_POLICY: Final = {
+    "Malicious": ("auto_close_malicious", "TruePositive"),
+    "Safe": ("auto_close_safe", "FalsePositive"),
+    "Suspicious": ("auto_close_suspicious", "Indeterminate"),
+}
 
 # Tags that mark special observables for the analyzer stage.
 SENDER_DOMAIN_TAG: Final = "email_sender_domain"
@@ -166,22 +171,26 @@ class CaseBuilder:
     def finalize_case(self, built: BuiltCase, verdict: str) -> None:
         """Close (and for malicious verdicts export) the case; failures are warnings.
 
-        A suspicious verdict leaves the case open for manual review.
+        Configured verdict policies determine whether the case stays open.
         """
         case_id = built.case["_id"]
+        case_config = config.get_app_config()["case"]
 
-        if verdict == "Suspicious":
-            self._events.info("The verdict is not final: the case stays open for manual review")
-            return
-
-        if verdict == "Malicious":
+        if verdict == "Malicious" and case_config["export_malicious_to_misp"]:
             try:
                 thehive.export_case(case_id, config.get_app_config()["thehive"]["misp_id"])
                 self._events.info("Exported the case to MISP")
             except (TheHiveApiError, ValueError) as exc:
                 self._events.warning(f"Could not export the case to MISP: {exc}")
 
-        resolution = "TruePositive" if verdict == "Malicious" else "FalsePositive"
+        close_option, resolution = _CLOSE_POLICY[verdict]
+        if not case_config[close_option]:
+            self._events.info(
+                f"Automatic closure is disabled for {verdict.lower()} verdicts; "
+                "the case stays open"
+            )
+            return
+
         try:
             thehive.close_case(case_id=case_id, status=resolution, summary="Automated analysis by ThePhish", impact_status="NoImpact")
             self._events.info(f"Closed the case as {resolution}")

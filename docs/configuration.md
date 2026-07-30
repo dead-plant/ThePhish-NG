@@ -17,6 +17,7 @@ Here you will find an explanation of each file as well as detailed descriptions 
   * [IMAP](#imap)
   * [TheHive](#thehive)
   * [Case](#case)
+  * [Notifications](#notifications)
 * [Whitelist](#whitelist)
 * [Analyzer Level Mappings](#analyzer-level-mappings)
   * [Data Type](#data-type)
@@ -264,6 +265,65 @@ tags = ["email", "ThePhish"]
 ```
 
 Tags added to the TheHive case.
+
+```toml
+export_malicious_to_misp = true
+```
+
+Whether to export cases with a malicious verdict to the configured MISP instance after analysis.
+This option is independent of automatic case closure.
+
+```toml
+auto_close_malicious = true
+auto_close_safe = true
+auto_close_suspicious = false
+```
+
+Whether to automatically close cases after analysis, depending on the verdict.
+Malicious cases are closed as `TruePositive`, safe cases as `FalsePositive`, and suspicious cases as `Indeterminate`.
+If the option for a verdict is disabled, the case remains open.
+
+### Notifications
+
+**Options related to email notifications**
+
+```toml
+send_start = true
+send_result_malicious = true
+send_result_safe = true
+send_result_suspicious = true
+```
+
+Whether to send an email when an analysis starts and when it finishes with the corresponding verdict.
+If an option is disabled, the responder-formatted email text is still written to the associated TheHive task description, but the responder is not executed.
+
+```toml
+include_analysis_link = true
+```
+
+Whether to include a link to the analysis page in notification emails.
+The link uses the configured `webapp.base_url`.
+
+```toml
+include_log = true
+```
+
+Whether to include the analysis log in the result email.
+The log is only included when `include_verdict` is also enabled.
+
+```toml
+include_verdict = true
+```
+
+Whether to include the verdict and analyzer summary in the result email.
+Disabling this option also disables the analysis log and replaces the result with a generic completion message.
+
+```toml
+recipient_override = ""
+```
+
+Email address to which all notifications are sent.
+If this is empty, notifications are sent to the address that submitted the email for analysis.
 
 ## Whitelist
 

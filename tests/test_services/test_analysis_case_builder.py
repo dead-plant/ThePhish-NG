@@ -6,6 +6,7 @@ from email.message import EmailMessage
 
 import pytest
 
+from app import config
 from app.repositories import thehive
 from app.services.analysis import case_builder, tracking
 from app.services.analysis.case_builder import ANALYSIS_TASK, NOTIFICATION_TASK, RESULT_TASK, SENDER_DOMAIN_TAG
@@ -195,6 +196,98 @@ class TestFinalizeCase:
 
         builder.finalize_case(built, "Suspicious")
         assert any("stays open" in entry["message"] for entry in alogger.entries)
+
+    def test_suspicious_verdict_closes_as_indeterminate(self, monkeypatch, builder):
+        monkeypatch.setitem(config.get_app_config()["case"], "auto_close_suspicious", True)
+        closed = []
+        monkeypatch.setattr(thehive, "close_case", lambda **kwargs: closed.append(kwargs))
+        built = case_builder.BuiltCase(
+            case={"_id": "case1", "number": 7, "title": "[ThePhish] x"},
+            task_ids={},
+        )
+
+        builder.finalize_case(built, "Suspicious")
+
+        assert closed == [{
+            "case_id": "case1",
+            "status": "Indeterminate",
+            "summary": "Automated analysis by ThePhish",
+            "impact_status": "NoImpact",
+        }]
+
+    @pytest.mark.parametrize(
+        ("verdict", "option"),
+        [
+            ("Malicious", "auto_close_malicious"),
+            ("Safe", "auto_close_safe"),
+            ("Suspicious", "auto_close_suspicious"),
+        ],
+    )
+    def test_disabled_auto_close_leaves_case_open(
+        self, monkeypatch, builder, alogger, verdict, option
+    ):
+        monkeypatch.setitem(config.get_app_config()["case"], option, False)
+        monkeypatch.setattr(thehive, "export_case", lambda *args: None)
+        monkeypatch.setattr(
+            thehive,
+            "close_case",
+            lambda **kwargs: pytest.fail("case must stay open"),
+        )
+        built = case_builder.BuiltCase(
+            case={"_id": "case1", "number": 7, "title": "[ThePhish] x"},
+            task_ids={},
+        )
+
+        builder.finalize_case(built, verdict)
+
+        assert any("stays open" in entry["message"] for entry in alogger.entries)
+
+    def test_disabled_malicious_export_still_allows_closure(
+        self, monkeypatch, builder
+    ):
+        case_config = config.get_app_config()["case"]
+        monkeypatch.setitem(case_config, "export_malicious_to_misp", False)
+        monkeypatch.setattr(
+            thehive,
+            "export_case",
+            lambda *args: pytest.fail("case must not be exported"),
+        )
+        closed = []
+        monkeypatch.setattr(thehive, "close_case", lambda **kwargs: closed.append(kwargs))
+        built = case_builder.BuiltCase(
+            case={"_id": "case1", "number": 7, "title": "[ThePhish] x"},
+            task_ids={},
+        )
+
+        builder.finalize_case(built, "Malicious")
+
+        assert closed[0]["status"] == "TruePositive"
+
+    def test_enabled_malicious_export_runs_when_auto_close_is_disabled(
+        self, monkeypatch, builder
+    ):
+        case_config = config.get_app_config()["case"]
+        monkeypatch.setitem(case_config, "export_malicious_to_misp", True)
+        monkeypatch.setitem(case_config, "auto_close_malicious", False)
+        exported = []
+        monkeypatch.setattr(
+            thehive,
+            "export_case",
+            lambda case_id, misp_id: exported.append((case_id, misp_id)),
+        )
+        monkeypatch.setattr(
+            thehive,
+            "close_case",
+            lambda **kwargs: pytest.fail("case must stay open"),
+        )
+        built = case_builder.BuiltCase(
+            case={"_id": "case1", "number": 7, "title": "[ThePhish] x"},
+            task_ids={},
+        )
+
+        builder.finalize_case(built, "Malicious")
+
+        assert exported == [("case1", "MISP")]
 
     def test_export_failure_is_recoverable(self, monkeypatch, builder, alogger):
         def export_error(case_id, misp_id):

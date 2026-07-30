@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from app import config
 from app.repositories import thehive
 from app.services.analysis import notifications, tracking
 from app.services.analysis.analyzers import AnalysisOutcome
@@ -130,16 +131,41 @@ class TestInputSafety:
 
 
 class TestStartEmail:
-    def test_start_email_contains_analysis_link(self, monkeypatch, notifier):
+    def test_start_email_starts_with_acknowledgement_then_analysis_link(
+        self, monkeypatch, notifier
+    ):
         stub = ResponderStub(monkeypatch, [PHISHMAILER])
 
         notifier.send_analysis_started(BUILT, "user@example.com", "aid123")
 
         lines = stub.task_updates[0][1]["description"].splitlines()
-        assert lines[1:3] == [
+        assert lines[1] == (
+            "Thanks for the submission. Your e-mail with subject "
+            "[Suspicious invoice] is being analyzed."
+        )
+        assert lines[3:5] == [
             "View the analysis in ThePhish-NG:",
             "https://thephish.example.com/analysis/aid123",
         ]
+
+    def test_disabled_start_email_writes_description_without_responder(
+        self, monkeypatch, notifier
+    ):
+        monkeypatch.setitem(
+            config.get_app_config()["notifications"],
+            "send_start",
+            False,
+        )
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+
+        notifier.send_analysis_started(BUILT, "user@example.com", "aid123")
+
+        assert len(stub.task_updates) == 1
+        task_id, fields = stub.task_updates[0]
+        assert task_id == "task-notif"
+        assert set(fields) == {"description"}
+        assert "being analyzed" in fields["description"]
+        assert stub.actions == []
 
 
 class TestResultEmail:
@@ -153,8 +179,11 @@ class TestResultEmail:
 
         body = stub.task_updates[0][1]["description"]
         lines = body.splitlines()
-        # the labeled link sits at the top of the email body (below the directive line)
-        assert lines[1:3] == [
+        assert lines[1] == (
+            "Thanks for your submission. The e-mail with subject "
+            "[Suspicious invoice] has been classified as Malicious."
+        )
+        assert lines[3:5] == [
             "View the analysis in ThePhish-NG:",
             "https://thephish.example.com/analysis/aid123",
         ]
@@ -190,6 +219,188 @@ class TestResultEmail:
         notifier.send_analysis_result(BUILT, "user@example.com", "aid123", outcome, alogger.snapshot())
 
         assert "memory only entry" in stub.task_updates[0][1]["description"]
+
+    @pytest.mark.parametrize(
+        ("verdict", "option"),
+        [
+            ("Malicious", "send_result_malicious"),
+            ("Safe", "send_result_safe"),
+            ("Suspicious", "send_result_suspicious"),
+        ],
+    )
+    def test_disabled_result_email_writes_description_without_responder(
+        self, monkeypatch, notifier, alogger, verdict, option
+    ):
+        monkeypatch.setitem(
+            config.get_app_config()["notifications"],
+            option,
+            False,
+        )
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+        outcome = AnalysisOutcome(verdict=verdict, summary_lines=[])
+
+        notifier.send_analysis_result(
+            BUILT,
+            "user@example.com",
+            "aid123",
+            outcome,
+            alogger.snapshot(),
+        )
+
+        assert len(stub.task_updates) == 1
+        task_id, fields = stub.task_updates[0]
+        assert task_id == "task-result"
+        assert set(fields) == {"description"}
+        assert stub.actions == []
+
+    def test_recipient_override_replaces_submitter_for_all_notifications(
+        self, monkeypatch, notifier, alogger
+    ):
+        monkeypatch.setitem(
+            config.get_app_config()["notifications"],
+            "recipient_override",
+            "override@example.com",
+        )
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+
+        notifier.send_analysis_started(BUILT, "submitter@example.com", "aid123")
+        notifier.send_analysis_result(
+            BUILT,
+            "submitter@example.com",
+            "aid123",
+            AnalysisOutcome(verdict="Safe", summary_lines=[]),
+            alogger.snapshot(),
+        )
+
+        descriptions = [
+            fields["description"]
+            for _, fields in stub.task_updates
+            if "description" in fields
+        ]
+        assert len(descriptions) == 2
+        assert all("mailto:override@example.com;" in value for value in descriptions)
+        assert all("submitter@example.com" not in value for value in descriptions)
+
+    def test_invalid_recipient_override_does_not_fall_back_to_submitter(
+        self, monkeypatch, notifier, alogger
+    ):
+        monkeypatch.setitem(
+            config.get_app_config()["notifications"],
+            "recipient_override",
+            "not an email address",
+        )
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+
+        notifier.send_analysis_result(
+            BUILT,
+            "submitter@example.com",
+            "aid123",
+            AnalysisOutcome(verdict="Safe", summary_lines=[]),
+            alogger.snapshot(),
+        )
+
+        assert stub.task_updates == []
+        assert stub.actions == []
+        assert any("recipient address is not a safe email address" in entry["message"] for entry in alogger.entries)
+
+    def test_analysis_link_can_be_omitted_from_both_notifications(
+        self, monkeypatch, notifier, alogger
+    ):
+        monkeypatch.setitem(
+            config.get_app_config()["notifications"],
+            "include_analysis_link",
+            False,
+        )
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+
+        notifier.send_analysis_started(BUILT, "user@example.com", "aid123")
+        notifier.send_analysis_result(
+            BUILT,
+            "user@example.com",
+            "aid123",
+            AnalysisOutcome(verdict="Safe", summary_lines=[]),
+            alogger.snapshot(),
+        )
+
+        descriptions = [
+            fields["description"]
+            for _, fields in stub.task_updates
+            if "description" in fields
+        ]
+        assert all(notifications.ANALYSIS_LINK_LABEL not in value for value in descriptions)
+        assert all("/analysis/aid123" not in value for value in descriptions)
+
+    def test_result_log_can_be_omitted(self, monkeypatch, notifier, alogger):
+        monkeypatch.setitem(
+            config.get_app_config()["notifications"],
+            "include_log",
+            False,
+        )
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+        alogger.info("private log detail")
+
+        notifier.send_analysis_result(
+            BUILT,
+            "user@example.com",
+            "aid123",
+            AnalysisOutcome(
+                verdict="Safe",
+                summary_lines=["Analyzer reports: 1 collected, 0 failed"],
+            ),
+            alogger.snapshot(),
+        )
+
+        description = stub.task_updates[0][1]["description"]
+        assert "Analyzer reports: 1 collected, 0 failed" in description
+        assert "--- Analysis log ---" not in description
+        assert "private log detail" not in description
+
+    def test_disabled_verdict_hides_subject_body_summary_and_log(
+        self, monkeypatch, notifier
+    ):
+        settings = config.get_app_config()["notifications"]
+        monkeypatch.setitem(settings, "include_verdict", False)
+        monkeypatch.setitem(settings, "include_log", True)
+        stub = ResponderStub(monkeypatch, [PHISHMAILER])
+        built = BuiltCase(
+            case={"_id": "case1", "number": 1, "title": "[ThePhish] Invoice"},
+            task_ids=BUILT.task_ids,
+        )
+        outcome = AnalysisOutcome(
+            verdict="Malicious",
+            summary_lines=["Malicious: analyzer detail"],
+        )
+        transcript = [{
+            "timestamp": "now",
+            "level": "info",
+            "message": "The email has been classified as Malicious",
+        }]
+
+        notifier.send_analysis_result(
+            built,
+            "user@example.com",
+            "aid123",
+            outcome,
+            transcript,
+        )
+
+        description = stub.task_updates[0][1]["description"]
+        lines = description.splitlines()
+        assert lines[1] == (
+            "Thanks for your submission. The analysis of the e-mail with subject "
+            "[Invoice] is complete. Please review the TheHive case or contact "
+            "your administrator for the result."
+        )
+        assert lines[3:5] == [
+            "View the analysis in ThePhish-NG:",
+            "https://thephish.example.com/analysis/aid123",
+        ]
+        assert "analysis complete" in description.lower()
+        assert "TheHive case" in description
+        assert "administrator" in description
+        assert "Malicious" not in description
+        assert "Analyzer summary" not in description
+        assert "Analysis log" not in description
 
 
 class TestFailureHandling:

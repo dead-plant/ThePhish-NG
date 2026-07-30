@@ -284,9 +284,9 @@
 			unavailable: "Analysis unavailable",
 		};
 		const verdictMessages = {
-			Safe: "The e-mail has been classified as SAFE. The case has been closed and the response has been sent.",
-			Suspicious: "The e-mail has been classified as SUSPICIOUS. The case has been left open for further investigation.",
-			Malicious: "The e-mail has been classified as MALICIOUS. The case has been closed, submitted to MISP, and the response has been sent.",
+			Safe: "The e-mail has been classified as SAFE. Review the analysis log or TheHive case for details.",
+			Suspicious: "The e-mail has been classified as SUSPICIOUS. Review the analysis log or TheHive case for details.",
+			Malicious: "The e-mail has been classified as MALICIOUS. Review the analysis log or TheHive case for details.",
 		};
 
 		function clearAlert() {

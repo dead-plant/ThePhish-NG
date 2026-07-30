@@ -487,6 +487,22 @@ test("analysis view uses a case-label fallback when the number is absent", () =>
 	assert.equal(elements.analysisCaseLink.classList.contains("d-none"), false);
 });
 
+test("analysis verdict messages do not infer configurable analysis actions", () => {
+	const expectations = [
+		["Safe", "The e-mail has been classified as SAFE. Review the analysis log or TheHive case for details."],
+		["Suspicious", "The e-mail has been classified as SUSPICIOUS. Review the analysis log or TheHive case for details."],
+		["Malicious", "The e-mail has been classified as MALICIOUS. Review the analysis log or TheHive case for details."],
+	];
+
+	for (const [verdict, expectedMessage] of expectations) {
+		const {document, elements} = createAnalysisDocument();
+
+		createAnalysisView(document).showVerdict(verdict);
+
+		assert.equal(elements.analysisResultMessage.textContent, expectedMessage);
+	}
+});
+
 test("analysis lifecycle reloads when a disposed page returns from BFCache", () => {
 	const listeners = new Map();
 	let disposed = 0;
