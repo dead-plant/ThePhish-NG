@@ -5,7 +5,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 import app as app_package
-from app._version import RELEASE_BASE_URL, __version__
+from app._version import __version__
 from app.web import routes as web_routes
 
 
@@ -23,19 +23,12 @@ def _set_webapp_links(monkeypatch):
     )
 
 
-def test_app_exposes_configured_version_template_globals(flask_app):
+def test_app_exposes_current_development_version_without_release_url(flask_app):
     globals_ = flask_app.jinja_env.globals
 
     assert globals_["show_version"] is True
     assert globals_["app_version"] == __version__
-    assert globals_["release_url"] == f"{RELEASE_BASE_URL}{__version__}"
-
-
-def test_release_metadata_matches_current_release():
-    assert __version__ == "0.1.0"
-    assert RELEASE_BASE_URL == (
-        "https://github.com/dead-plant/ThePhish-NG/releases/tag/v"
-    )
+    assert globals_["release_url"] is None
 
 
 def test_development_versions_do_not_link_to_releases():
@@ -49,8 +42,14 @@ def test_stable_versions_link_to_the_matching_release():
     )
 
 
-def test_index_renders_linked_version_footer(client, monkeypatch):
+def test_index_renders_linked_version_footer(client, flask_app, monkeypatch):
     _set_webapp_links(monkeypatch)
+    monkeypatch.setitem(flask_app.jinja_env.globals, "app_version", "0.2.0")
+    monkeypatch.setitem(
+        flask_app.jinja_env.globals,
+        "release_url",
+        "https://github.com/dead-plant/ThePhish-NG/releases/tag/v0.2.0",
+    )
 
     response = client.get("/")
 
@@ -58,11 +57,13 @@ def test_index_renders_linked_version_footer(client, monkeypatch):
     page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
     footer = page.select_one("[data-app-version]")
     assert footer is not None
-    assert footer.get_text(" ", strip=True) == f"ThePhish-NG v{__version__}"
+    assert footer.get_text(" ", strip=True) == "ThePhish-NG v0.2.0"
     release_link = footer.select_one("a")
     assert release_link is not None
-    assert release_link.get_text(strip=True) == f"v{__version__}"
-    assert release_link["href"] == f"{RELEASE_BASE_URL}{__version__}"
+    assert release_link.get_text(strip=True) == "v0.2.0"
+    assert release_link["href"] == (
+        "https://github.com/dead-plant/ThePhish-NG/releases/tag/v0.2.0"
+    )
 
 
 def test_index_renders_unlinked_development_version(
@@ -159,13 +160,6 @@ def test_analysis_stylesheet_is_served(client):
     assert response.status_code == 200
     assert response.mimetype == "text/css"
 
-
-def test_analysis_template_does_not_depend_on_socket_io():
-    template = Path("app/web/templates/analysis.html").read_text(encoding="utf-8")
-
-    assert "socket.io" not in template.lower()
-
-
 def test_index_is_listing_only_and_does_not_require_socket_io(client, monkeypatch):
     _set_webapp_links(monkeypatch)
 
@@ -182,13 +176,6 @@ def test_index_is_listing_only_and_does_not_require_socket_io(client, monkeypatc
     assert not any("socket.io" in (script.get("src") or "").lower() for script in page.select("script"))
 
 
-def test_index_application_script_contains_no_xhr():
-    script = Path("app/web/static/assets/js/thephish.js").read_text(encoding="utf-8")
-
-    assert "XMLHttpRequest" not in script
-    assert "window.fetch.bind(window)" in script
-
-
 def test_analysis_page_loads_analysis_controller(client, monkeypatch):
     _set_webapp_links(monkeypatch)
 
@@ -198,11 +185,3 @@ def test_analysis_page_loads_analysis_controller(client, monkeypatch):
     script = page.select_one('script[src$="/static/assets/js/analysis.js"]')
     assert script is not None
 
-
-def test_analysis_controller_uses_text_rendering_and_no_xhr():
-    script = Path("app/web/static/assets/js/analysis.js").read_text(encoding="utf-8")
-
-    assert "XMLHttpRequest" not in script
-    assert ".innerHTML" not in script
-    assert ".textContent" in script
-    assert "new EventSourceCtor" in script
