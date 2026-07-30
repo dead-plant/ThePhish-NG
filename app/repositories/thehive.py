@@ -9,7 +9,7 @@ from thehive4py import TheHiveApi
 from thehive4py.errors import TheHiveError
 from thehive4py.query.filters import Eq
 from thehive4py.query.sort import Desc
-from thehive4py.types.case import InputCase, InputUpdateCase, OutputCase, ImpactStatusValue, CaseStatusValue
+from thehive4py.types.case import InputCase, InputUpdateCase, InputURLLink, OutputCase, ImpactStatusValue, CaseStatusValue
 from thehive4py.types.case_template import InputCaseTemplate, OutputCaseTemplate
 from thehive4py.types.cortex import InputAnalyzerJob, InputResponderAction, OutputResponderAction, OutputAnalyzerJob, OutputAnalyzer, OutputResponder
 from thehive4py.types.observable import InputBulkUpdateObservable, InputObservable, InputUpdateObservable, OutputObservable
@@ -185,6 +185,19 @@ def create_case(*, title: str, tlp: int, pap: int, tags: list[str], description:
     created = _client.case.create(case)
     log.debug("Created case %r with id %s", title, created["_id"])
     return created
+
+
+@_wrap_api_errors
+def link_url(*, case_id: str, link_type: str, url: str) -> None:
+    """Add an external URL link to a case."""
+    _require_str(case_id=case_id, link_type=link_type, url=url)
+
+    fields: InputURLLink = {
+        "type": link_type,
+        "url": url,
+    }
+    _client.case.link_url(case_id, fields)
+    log.debug("Linked %s to case %s", url, case_id)
 
 
 @_wrap_api_errors

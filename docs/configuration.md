@@ -267,6 +267,13 @@ tags = ["email", "ThePhish"]
 Tags added to the TheHive case.
 
 ```toml
+add_analysis_link = true
+```
+
+Whether to add a linked element to the TheHive case that points to the ThePhish-NG analysis page.
+The link uses the configured `webapp.base_url` and has the type `ThePhish-NG Analysis`.
+
+```toml
 export_malicious_to_misp = true
 ```
 

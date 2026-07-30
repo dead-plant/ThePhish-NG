@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 # Case template used for every ThePhish case.
 CASE_TEMPLATE_NAME: Final = "ThePhish"
 CASE_TITLE_PREFIX: Final = "[ThePhish] "
+ANALYSIS_LINK_TYPE: Final = "ThePhish-NG Analysis"
 NOTIFICATION_TASK: Final = "ThePhish notification"
 ANALYSIS_TASK: Final = "ThePhish analysis"
 RESULT_TASK: Final = "ThePhish result"
@@ -95,7 +96,7 @@ class CaseBuilder:
     def __init__(self, events: EventSink) -> None:
         self._events = events
 
-    def build_case(self, internal_msg: email.message.Message) -> BuiltCase:
+    def build_case(self, internal_msg: email.message.Message, analysis_id: str) -> BuiltCase:
         """Create the TheHive case for the reported email and populate it.
 
         A failure to add a single observable or attachment is logged as a
@@ -136,6 +137,8 @@ class CaseBuilder:
         case_id = case["_id"]
         self._events.info(f"Created case #{case['number']}")
 
+        self._add_analysis_link(case_id, analysis_id)
+
         # The sender domain is added separately with its marker tag, so the
         # SPF/DMARC analyzer can be restricted to it.
         domain_of_sender = sender_domain(internal_msg)
@@ -167,6 +170,22 @@ class CaseBuilder:
             task_ids = {}
 
         return BuiltCase(case=case, task_ids=task_ids)
+
+    def _add_analysis_link(self, case_id: str, analysis_id: str) -> None:
+        """Add the ThePhish-NG analysis page as a linked element."""
+        if not config.get_app_config()["case"]["add_analysis_link"]:
+            return
+
+        url = f"{config.get_app_config()['webapp']['base_url']}/analysis/{analysis_id}"
+        try:
+            thehive.link_url(
+                case_id=case_id,
+                link_type=ANALYSIS_LINK_TYPE,
+                url=url,
+            )
+            self._events.info("Linked the ThePhish-NG analysis to the case")
+        except (TheHiveApiError, ValueError) as exc:
+            self._events.warning(f"Could not link the ThePhish-NG analysis to the case: {exc}")
 
     def finalize_case(self, built: BuiltCase, verdict: str) -> None:
         """Close (and for malicious verdicts export) the case; failures are warnings.

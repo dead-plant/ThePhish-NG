@@ -27,15 +27,18 @@ def make_eml() -> EmailMessage:
 class CaseStub:
     """Replace the thehive repository functions used by the case builder."""
 
-    def __init__(self, monkeypatch, *, create_error=None, observable_error_types=()):
+    def __init__(self, monkeypatch, *, create_error=None, link_error=None, observable_error_types=()):
         self.create_error = create_error
+        self.link_error = link_error
         self.observable_error_types = set(observable_error_types)
         self.case = {"_id": "case1", "number": 7, "title": "[ThePhish] Attack invoice"}
+        self.links = []  # (case_id, link_type, url)
         self.observables = []  # (data_type, data, tags, message)
         self.files = []  # (basename, tags)
 
         monkeypatch.setattr(thehive, "create_case_template_unless_exists", lambda **kwargs: {"_id": "template1"})
         monkeypatch.setattr(thehive, "create_case", self._create_case)
+        monkeypatch.setattr(thehive, "link_url", self._link_url)
         monkeypatch.setattr(thehive, "create_observable", self._create_observable)
         monkeypatch.setattr(thehive, "create_file_observable", self._create_file_observable)
         monkeypatch.setattr(thehive, "find_all_tasks", lambda case_id: [
@@ -51,6 +54,11 @@ class CaseStub:
             raise self.create_error
         self.case_kwargs = kwargs
         return self.case
+
+    def _link_url(self, *, case_id, link_type, url):
+        if self.link_error is not None:
+            raise self.link_error
+        self.links.append((case_id, link_type, url))
 
     def _create_observable(self, *, case_id, data_type, data, ioc=False, tags=None, message=""):
         if data_type in self.observable_error_types:
@@ -124,12 +132,19 @@ class TestFilteringAndUrls:
 class TestBuildCase:
     def test_happy_path_populates_the_case(self, monkeypatch, builder):
         stub = CaseStub(monkeypatch)
-        built = builder.build_case(make_eml())
+        built = builder.build_case(make_eml(), "aid123")
 
         assert built.case is stub.case
         assert built.task_ids == {NOTIFICATION_TASK: "t1", ANALYSIS_TASK: "t2", RESULT_TASK: "t3"}
         assert stub.case_kwargs["title"] == "Attack invoice"
         assert stub.case_kwargs["template"] == "ThePhish"
+        assert stub.links == [
+            (
+                "case1",
+                "ThePhish-NG Analysis",
+                "https://thephish.example.com/analysis/aid123",
+            )
+        ]
 
         # the sender domain is tagged so the SPF/DMARC analyzer can find it
         sender_batches = [entry for entry in stub.observables_of_type("domain") if SENDER_DOMAIN_TAG in entry[2]]
@@ -151,20 +166,43 @@ class TestBuildCase:
     def test_case_creation_failure_is_fatal(self, monkeypatch, builder):
         CaseStub(monkeypatch, create_error=thehive.TheHiveApiError("api down"))
         with pytest.raises(AnalysisError):
-            builder.build_case(make_eml())
+            builder.build_case(make_eml(), "aid123")
 
     def test_single_observable_failure_is_recoverable(self, monkeypatch, builder, alogger):
         stub = CaseStub(monkeypatch, observable_error_types={"url"})
-        built = builder.build_case(make_eml())
+        built = builder.build_case(make_eml(), "aid123")
 
         assert built.case is stub.case
         assert any(entry["level"] == "warning" and "url" in entry["message"] for entry in alogger.entries)
         assert stub.observables_of_type("mail")  # other observables were still added
 
+    def test_analysis_link_can_be_disabled(self, monkeypatch, builder):
+        monkeypatch.setitem(config.get_app_config()["case"], "add_analysis_link", False)
+        stub = CaseStub(monkeypatch)
+
+        builder.build_case(make_eml(), "aid123")
+
+        assert stub.links == []
+
+    def test_analysis_link_failure_is_recoverable(self, monkeypatch, builder, alogger):
+        stub = CaseStub(
+            monkeypatch,
+            link_error=thehive.TheHiveApiError("link api down"),
+        )
+
+        built = builder.build_case(make_eml(), "aid123")
+
+        assert built.case is stub.case
+        assert any(
+            entry["level"] == "warning"
+            and "Could not link the ThePhish-NG analysis" in entry["message"]
+            for entry in alogger.entries
+        )
+
     def test_whitelisted_attachment_is_skipped(self, monkeypatch, builder, alogger):
         stub = CaseStub(monkeypatch)
         monkeypatch.setattr(case_builder.whitelist, "is_whitelisted", lambda obs_type, value: obs_type == "filename" and value == "invoice.pdf")
-        builder.build_case(make_eml())
+        builder.build_case(make_eml(), "aid123")
 
         file_names = {name for name, _ in stub.files}
         assert "invoice.pdf" not in file_names

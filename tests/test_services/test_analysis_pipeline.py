@@ -97,9 +97,14 @@ class TestExecuteAnalysis:
         tracking.create_analysis(ANALYSIS_ID, 5)
         built = case_builder.BuiltCase(case={"_id": "~case1", "number": 42, "title": "[ThePhish] subject"}, task_ids={})
         stages = []
+        case_build_calls = []
 
         monkeypatch.setattr(pipeline.mailbox, "fetch_analyzable_eml", lambda uid: (email.message.Message(), "user@example.com"))
-        monkeypatch.setattr(pipeline.case_builder.CaseBuilder, "build_case", lambda self, msg: built)
+        monkeypatch.setattr(
+            pipeline.case_builder.CaseBuilder,
+            "build_case",
+            lambda self, msg, analysis_id: case_build_calls.append(analysis_id) or built,
+        )
         monkeypatch.setattr(pipeline.notifications.Notifier, "send_analysis_started", lambda self, *args: stages.append("started"))
         monkeypatch.setattr(pipeline.analyzers.AnalyzerRunner, "run", lambda self, b: analyzers.AnalysisOutcome(verdict="Safe", summary_lines=["Analyzer reports: 1 collected, 0 failed"]))
         monkeypatch.setattr(pipeline.case_builder.CaseBuilder, "finalize_case", lambda self, b, verdict: stages.append("finalized"))
@@ -113,6 +118,7 @@ class TestExecuteAnalysis:
         assert state["case_id"] == "~case1"
         assert state["case_number"] == "42"
         assert state["finished_at"]
+        assert case_build_calls == [ANALYSIS_ID]
         assert stages == ["started", "finalized", "result"]
         messages = [entry["message"] for entry in tracking.get_analysis_log(ANALYSIS_ID)]
         assert "The email has been classified as Safe" in messages
