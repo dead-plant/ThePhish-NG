@@ -97,6 +97,12 @@ It is used when linking to ThePhish-NG, for example in the result email that con
 Do not include a trailing slash.
 
 ```toml
+show_version = true
+```
+
+Whether to show the running ThePhish-NG version in the footer and include it in the `/api/health` response.
+
+```toml
 thehive_url = "https://link-to-thehive/"
 cortex_url = "https://link-to-cortex/"
 misp_url = "https://link-to-misp/"

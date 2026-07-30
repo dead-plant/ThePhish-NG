@@ -2,7 +2,9 @@ import logging
 
 from flask import Response, jsonify, request
 
+from app import config
 from app.api import api_bp
+from app._version import __version__
 from app.services import analysis, listing
 
 log = logging.getLogger(__name__)
@@ -35,7 +37,10 @@ def handle_list_emails_error(error):
 # Simple health endpoint
 @api_bp.route("/health")
 def health():
-    return jsonify(status="ok")
+    payload = {"status": "ok"}
+    if config.get_app_config()["webapp"]["show_version"]:
+        payload["version"] = __version__
+    return jsonify(payload)
 
 
 @api_bp.route("/emails", methods=["GET"])

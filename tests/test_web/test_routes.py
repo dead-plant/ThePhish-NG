@@ -4,6 +4,8 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
+import app as app_package
+from app._version import RELEASE_BASE_URL, __version__
 from app.web import routes as web_routes
 
 
@@ -19,6 +21,79 @@ def _set_webapp_links(monkeypatch):
             }
         },
     )
+
+
+def test_app_exposes_configured_version_template_globals(flask_app):
+    globals_ = flask_app.jinja_env.globals
+
+    assert globals_["show_version"] is True
+    assert globals_["app_version"] == __version__
+    assert globals_["release_url"] == f"{RELEASE_BASE_URL}{__version__}"
+
+
+def test_release_metadata_matches_current_release():
+    assert __version__ == "0.1.0"
+    assert RELEASE_BASE_URL == (
+        "https://github.com/dead-plant/ThePhish-NG/releases/tag/v"
+    )
+
+
+def test_development_versions_do_not_link_to_releases():
+    assert app_package._release_url_for("0.2.0.dev1") is None
+    assert app_package._release_url_for("0.2.0+local") is None
+
+
+def test_stable_versions_link_to_the_matching_release():
+    assert app_package._release_url_for("0.2.0") == (
+        "https://github.com/dead-plant/ThePhish-NG/releases/tag/v0.2.0"
+    )
+
+
+def test_index_renders_linked_version_footer(client, monkeypatch):
+    _set_webapp_links(monkeypatch)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+    footer = page.select_one("[data-app-version]")
+    assert footer is not None
+    assert footer.get_text(" ", strip=True) == f"ThePhish-NG v{__version__}"
+    release_link = footer.select_one("a")
+    assert release_link is not None
+    assert release_link.get_text(strip=True) == f"v{__version__}"
+    assert release_link["href"] == f"{RELEASE_BASE_URL}{__version__}"
+
+
+def test_index_renders_unlinked_development_version(
+    client, flask_app, monkeypatch
+):
+    _set_webapp_links(monkeypatch)
+    monkeypatch.setitem(flask_app.jinja_env.globals, "release_url", None)
+
+    response = client.get("/")
+
+    page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+    footer = page.select_one("[data-app-version]")
+    assert footer is not None
+    assert footer.get_text(" ", strip=True) == f"ThePhish-NG v{__version__}"
+    assert footer.select_one("a") is None
+
+
+def test_app_omits_version_footer_when_configured_off(monkeypatch):
+    monkeypatch.setitem(
+        web_routes.config.get_app_config()["webapp"],
+        "show_version",
+        False,
+    )
+    flask_app = app_package.create_app()
+    flask_app.config["TESTING"] = True
+
+    assert flask_app.jinja_env.globals["show_version"] is False
+    response = flask_app.test_client().get("/")
+
+    page = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+    assert page.select_one("[data-app-version]") is None
 
 
 def test_analysis_page_renders_layout_and_configured_links(client, monkeypatch):
