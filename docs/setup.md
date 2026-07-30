@@ -11,6 +11,7 @@ If you choose a different location, adjust the paths accordingly.
 * [Hardware Requirements](#hardware-requirements)
 * [Prerequisites](#prerequisites)
 * [Disclaimer](#disclaimer)
+* [Network Access and Firewall](#network-access-and-firewall)
 * [Install TheHive, Cortex, and MISP](#install-thehive-cortex-and-misp)
   * [Install Using Docker (Recommended)](#install-using-docker-recommended)
   * [Secure the Initial Administrator Accounts](#secure-the-initial-administrator-accounts)
@@ -60,6 +61,13 @@ See the official [Docker installation guide](https://docs.docker.com/engine/inst
 
 This is a simplified installation guide intended for regular users and small deployments.
 For production environments, also review the official documentations of TheHive, Cortex and MISP.
+
+## Network Access and Firewall
+
+ThePhish-NG does not provide built-in authentication or access control.
+
+Do not expose it directly to the internet or an untrusted network.
+Configure your firewall before continuing.
 
 ## Install TheHive, Cortex, and MISP
 

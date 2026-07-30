@@ -22,8 +22,8 @@ It handles the full analysis flow from extracting observables, running the appli
 * [Additional Documentation](#additional-documentation)
 * [External References](#external-references)
 * [Highlighted Features](#highlighted-features)
-* [Implementation](#implementation)
-  * [Architecture](#architecture)
+* [Architecture](#architecture)
+  * [Chart](#chart)
   * [Description](#description)
 * [Credits](#credits)
 * [License](#license)
@@ -55,9 +55,9 @@ It handles the full analysis flow from extracting observables, running the appli
 * Exports malicious cases to MISP and keeps suspicious cases open for review
 * Start and result emails with a log and link to the web view
 
-## Implementation
+## Architecture
 
-### Architecture
+### Chart
 
 <div>
   <p align="center">
