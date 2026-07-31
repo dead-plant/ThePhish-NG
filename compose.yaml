@@ -26,7 +26,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket,sys; s=socket.create_connection(('127.0.0.1',8080),3); s.close()"]
+      test: ["CMD", "python", "-c", 'import json, sys, urllib.request; r = urllib.request.urlopen("http://127.0.0.1:8080/api/health", timeout=3); sys.exit(0 if r.status == 200 and json.load(r).get("status") == "ok" else 1)']
       interval: 30s
       timeout: 5s
       retries: 3
