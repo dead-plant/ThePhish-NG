@@ -81,7 +81,7 @@ The main part of an analysis is not executed inside the Flask thread as it can t
 
 The web interface communicates with the application through its JSON API. The main page retrieves the list of analyzable emails with an HTTP request. When the analyst starts an analysis, a POST request is sent and the user gets redirected to the persistent analysis page. This persistent page first loads the stored state, and then connects to an SSE stream to retrieve live updates if the analysis is still running.
 
-The analysis state is stored independently from the browser connection so the page can be reloaded during the analysis without losing progress. Optionally, a link to this analysis page can be included in the result email or TheHive case so it can be reopened until the retention time is over.
+The analysis state is stored independently of the browser connection so the page can be reloaded during the analysis without losing progress. Optionally, a link to this analysis page can be included in the result email or TheHive case so it can be reopened until the retention time is over.
 
 ### Analysis Workflow
 
