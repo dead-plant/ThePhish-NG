@@ -180,9 +180,10 @@ class AnalyzerRunner:
         self._poll_jobs(records)
 
         malicious_ids, suspicious_ids = self._mark_iocs(records)
-        if malicious_ids:
+        malicious_observable_threshold = config.get_app_config()["analysis"]["malicious_observable_threshold"]
+        if len(malicious_ids) >= malicious_observable_threshold:
             verdict = VERDICT_MALICIOUS
-        elif suspicious_ids:
+        elif malicious_ids or suspicious_ids:
             verdict = VERDICT_SUSPICIOUS
         else:
             verdict = VERDICT_SAFE

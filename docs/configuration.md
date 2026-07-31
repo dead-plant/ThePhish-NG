@@ -171,6 +171,14 @@ analyzer_prefix_blacklist = ["UnshortenLink", "MSDefenderOffice365_SafeLinksDeco
 Analyzers whose names start with one of these strings will never be started by ThePhish-NG.
 This is useful if your Cortex organization contains analyzers that are incompatible with ThePhish-NG.
 
+```toml
+malicious_observable_threshold = 1
+```
+
+Number of unique malicious observables required for a malicious verdict.
+If at least one observable is malicious but the threshold is not reached, the verdict is suspicious.
+Malicious observables are still marked as IoCs regardless of the final verdict.
+
 ### IMAP
 
 **Options related to the IMAP connection / Email input**

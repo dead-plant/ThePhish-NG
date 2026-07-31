@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from app import config
 from app.repositories import thehive
 from app.services.analysis import analyzers, tracking
 from app.services.analysis.case_builder import ANALYSIS_TASK, EML_SAMPLE_TAG, SENDER_DOMAIN_TAG, BuiltCase
@@ -240,6 +241,57 @@ class TestVerdict:
         assert outcome.verdict == "Malicious"
         assert stub.ioc_updates == [(["d1"], True)]
         assert "Malicious: MalwareFinder_1_0 on domain evil.test" in outcome.summary_lines
+
+    def test_threshold_requires_enough_unique_malicious_observables(self, monkeypatch, runner, alogger):
+        monkeypatch.setitem(config.get_app_config()["analysis"], "malicious_observable_threshold", 2)
+        TheHiveStub(
+            monkeypatch,
+            [
+                observable("d1", "domain", data="evil.test"),
+                observable("d2", "domain", data="also-evil.test"),
+            ],
+            {"domain": [analyzer("MalwareFinder_1_0")]},
+            levels={"MalwareFinder_1_0": "malicious"},
+        )
+
+        outcome = runner.run(BUILT)
+
+        assert outcome.verdict == "Malicious"
+
+    def test_malicious_observable_below_threshold_gives_suspicious_verdict(self, monkeypatch, runner, alogger):
+        monkeypatch.setitem(config.get_app_config()["analysis"], "malicious_observable_threshold", 2)
+        stub = TheHiveStub(
+            monkeypatch,
+            [observable("d1", "domain", data="evil.test")],
+            {"domain": [analyzer("MalwareFinder_1_0")]},
+            levels={"MalwareFinder_1_0": "malicious"},
+        )
+
+        outcome = runner.run(BUILT)
+
+        assert outcome.verdict == "Suspicious"
+        assert stub.ioc_updates == [(["d1"], True)]
+
+    def test_multiple_malicious_reports_for_one_observable_count_once(self, monkeypatch, runner, alogger):
+        monkeypatch.setitem(config.get_app_config()["analysis"], "malicious_observable_threshold", 2)
+        TheHiveStub(
+            monkeypatch,
+            [observable("d1", "domain", data="evil.test")],
+            {
+                "domain": [
+                    analyzer("FirstMalwareFinder_1_0"),
+                    analyzer("SecondMalwareFinder_1_0"),
+                ],
+            },
+            levels={
+                "FirstMalwareFinder_1_0": "malicious",
+                "SecondMalwareFinder_1_0": "malicious",
+            },
+        )
+
+        outcome = runner.run(BUILT)
+
+        assert outcome.verdict == "Suspicious"
 
     def test_job_without_taxonomies_uses_observable_report(self, monkeypatch, runner, alogger):
         stub = TheHiveStub(
