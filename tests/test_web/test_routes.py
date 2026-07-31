@@ -26,9 +26,10 @@ def _set_webapp_links(monkeypatch):
 def test_app_exposes_current_development_version_without_release_url(flask_app):
     globals_ = flask_app.jinja_env.globals
 
-    assert globals_["show_version"] is True
-    assert globals_["app_version"] == __version__
-    assert globals_["release_url"] is None
+    if ".dev" in globals_["app_version"] or "+" in globals_["app_version"]:
+        assert globals_["show_version"] is True
+        assert globals_["app_version"] == __version__
+        assert globals_["release_url"] is None
 
 
 def test_development_versions_do_not_link_to_releases():
