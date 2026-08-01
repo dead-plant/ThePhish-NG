@@ -5,7 +5,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
 	<title>ThePhish Analysis</title>
-	<link rel="icon" type="image/png" sizes="1000x999" href="{{ url_for('web.static', filename='assets/img/logo_rounded.png') }}">
+	<link rel="icon" type="image/png" sizes="1000x999" href="{{ url_for('web.static', filename='assets/img/logo-ng-rounded.png') }}">
 	<link rel="stylesheet" href="{{ url_for('web.static', filename='assets/bootstrap/css/bootstrap.min.css') }}">
 	<link rel="stylesheet" href="{{ url_for('web.static', filename='assets/fonts/fonts.css') }}">
 	<link rel="stylesheet" href="{{ url_for('web.static', filename='assets/fonts/font-awesome.min.css') }}">
@@ -20,7 +20,7 @@
 			<div class="container d-flex flex-column p-0">
 				<hr class="sidebar-divider my-0">
 				<ul class="navbar-nav flex-column text-light analysis-sidebar-links" id="accordionSidebar">
-					<li class="nav-item"><a class="nav-link active" href="/"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/logo_rounded.png') }}" alt="ThePhish home"></a></li>
+					<li class="nav-item"><a class="nav-link active" href="/"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/logo-ng-rounded.png') }}" alt="ThePhish home"></a></li>
 					<li class="nav-item"><a class="nav-link" href="{{ webapp_thehive_url }}" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/thehive.png') }}" alt="TheHive"></a></li>
 					<li class="nav-item"><a class="nav-link" href="{{ webapp_cortex_url }}" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/cortex.png') }}" alt="Cortex"></a></li>
 					<li class="nav-item"><a class="nav-link" href="{{ webapp_misp_url }}" target="_blank" rel="noopener noreferrer"><img class="img-fluid" data-bss-hover-animate="bounce" src="{{ url_for('web.static', filename='assets/img/misp.png') }}" alt="MISP"></a></li>
@@ -32,7 +32,7 @@
 			<main id="content" class="analysis-content">
 				<div class="analysis-main container-fluid">
 					<a href="/" class="analysis-brand" aria-label="Return to email listing">
-						<img class="img-fluid analysis-logo" src="{{ url_for('web.static', filename='assets/img/ThePhish_logo.png') }}" alt="ThePhish">
+						<img class="img-fluid analysis-logo" src="{{ url_for('web.static', filename='assets/img/logo-ng-text.png') }}" alt="ThePhish">
 					</a>
 					<div id="analysisStatus" class="analysis-status analysis-status-loading" role="status" aria-live="polite">Loading analysis…</div>
 					<div id="analysisAlert" class="alert d-none analysis-alert" role="alert"></div>
