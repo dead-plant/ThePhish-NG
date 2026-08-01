@@ -114,7 +114,7 @@ def test_analysis_page_renders_layout_and_configured_links(client, monkeypatch):
     assert page.select_one("#analysisResultTitle") is not None
     assert page.select_one("#analysisResultMessage") is not None
     assert page.select_one('link[href$="/static/assets/css/analysis.css"]') is not None
-    assert page.select_one('img.analysis-logo[src$="/static/assets/img/ThePhish_logo.png"]') is not None
+    assert page.select_one('img.analysis-logo[src$="/static/assets/img/logo-ng-text.png"]') is not None
     assert {link.get("href") for link in page.select("nav a")} >= {
         "/",
         "https://thehive.example.test",
