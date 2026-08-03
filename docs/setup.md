@@ -41,6 +41,7 @@ Recommended starting point:
 
 ## Prerequisites
 
+* IMAP and SMTP access to a dedicated mailbox
 * A fresh Linux installation (preferably Debian 13)
 * A user with sudo privileges
 * Docker Engine 25 or newer and Docker Compose plugin 2.20.2 or newer, installed and running
@@ -190,18 +191,16 @@ cd ..
 
 ```bash
 cd thehive
-docker compose up -d
-docker compose ps
+sudo docker compose up -d
 
 cd ../cortex
-docker compose up -d
-docker compose ps
+sudo docker compose up -d
 
 cd ../misp
-docker compose up -d
-docker compose ps
+sudo docker compose up -d
 
 cd ..
+sudo docker ps
 ```
 
 Confirm that every service is running or healthy. Startup can take a few minutes.
@@ -492,7 +491,16 @@ This section assumes TheHive, Cortex, and MISP are reachable and you created adm
 
 ### Configure MISP
 
-TODO
+#### Warninglists
+
+Warninglists are there so a false positive analyzer doesn't permanently flag false positives.
+You should enable warning lists for your Infrastructure.
+
+You can enable them in `Input Filters > Warninglists` in the Web UI.
+
+This list is a good starting point for most people:
+
+* ...
 
 ### Configure Cortex
 
